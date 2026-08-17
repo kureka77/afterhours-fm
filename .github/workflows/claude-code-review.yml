@@ -12,6 +12,12 @@ on:
 
 jobs:
   claude-review:
+    # Dependabot PRs run with a read-only token and no access to Actions
+    # secrets, so secrets.CLAUDE_CODE_OAUTH_TOKEN resolves empty and the job
+    # can only fail. Skip them rather than collect red crosses on every
+    # dependency bump — CI still runs on those PRs and is what actually gates.
+    if: github.actor != 'dependabot[bot]'
+
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
