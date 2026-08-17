@@ -254,7 +254,13 @@ Two things follow from testing against Postgres, both handled in `tests/conftest
   the sequence running through a `DELETE`. Nothing asserts on id values.
 
 There is no Alembic. `_ensure_station_column()` in `main.py` is a hand-rolled,
-idempotent startup guard that adds the `station` column if missing.
+idempotent startup guard that adds the `station` column if missing and backfills old
+rows. It takes an optional engine argument purely so the tests can point it at a test
+database — it runs from the FastAPI lifespan, which httpx's `ASGITransport` never
+fires, so it would otherwise be unreachable from the suite. It is also the only code
+here that issues genuinely different SQL per dialect (`PRAGMA table_info` on SQLite,
+`information_schema.columns` on Postgres), which is why
+`tests/test_migration_guard.py` matters on both CI database jobs rather than one.
 
 ## License
 

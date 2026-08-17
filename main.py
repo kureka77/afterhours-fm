@@ -11,10 +11,10 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy import select
 
-from database import engine, Base, get_session, DATABASE_URL
+from database import engine, Base, get_session
 import models  # noqa: F401 — registers ORM models
 from models import PlayedTrack
 import spotify
@@ -259,16 +259,27 @@ async def _cover_art_cached(artist: str, title: str) -> str | None:
 
 
 # ── Schema migration guard ──────────────────────────────────────────────────────
-async def _ensure_station_column() -> None:
+async def _ensure_station_column(db_engine: AsyncEngine | None = None) -> None:
     """Add played_tracks.station if it's missing, and backfill old rows.
 
     No Alembic in this project (see README) — this is a hand-rolled, idempotent
     guard that runs on every startup. Safe to leave in place indefinitely; once
     the column exists it's a no-op read-then-skip. Old rows predate
     multi-station support and were always Pure Ibiza Radio, hence the backfill.
+
+    `db_engine` defaults to the app engine; the parameter exists so the test
+    suite can point it at a test database. Without it this reached straight
+    for the module-level engine and was effectively untestable, which left the
+    SQLite/Postgres branch below unexercised — the one place in the codebase
+    where the two engines need genuinely different SQL.
+
+    The dialect is read off the engine rather than by string-matching
+    DATABASE_URL: the engine is the thing actually being migrated, and asking
+    it directly can't drift from whatever URL happens to be in the environment.
     """
-    is_sqlite = DATABASE_URL.startswith("sqlite")
-    async with engine.begin() as conn:
+    target = db_engine if db_engine is not None else engine
+    is_sqlite = target.dialect.name == "sqlite"
+    async with target.begin() as conn:
         if is_sqlite:
             result = await conn.exec_driver_sql("PRAGMA table_info(played_tracks)")
             existing = {row[1] for row in result}
