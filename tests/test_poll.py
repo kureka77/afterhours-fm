@@ -1,6 +1,5 @@
 """Tests for _read_icy_now_playing() / _read_icy_now_playing_cached() —
 the ICY in-band metadata reader that replaced the old AcoustID pipeline."""
-import pytest
 import main
 
 EMPTY = {"artist": "", "title": "", "format": None, "bitrate": None, "sample_rate": None}

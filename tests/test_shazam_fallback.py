@@ -3,7 +3,6 @@ used only when a station's ICY metadata gives nothing (see main.py's
 _shazam_fallback_cached)."""
 from unittest.mock import MagicMock, patch
 
-import pytest
 import shazam_fallback as sf
 
 
