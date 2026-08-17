@@ -52,7 +52,7 @@ _STATION_URLS: dict[str, str] = {s["name"]: s["url"] for s in STATIONS}
 # radiojar) and none match "ibizasonica" closely enough to be sure which one
 # it actually is; better to show "—" than a confidently-wrong number.
 ICECAST_STATUS: dict[str, tuple[str, str]] = {
-    "Pure Ibiza Radio":      ("http://control.streaming-pro.com:8028/status-json.xsl", "stream.mp3"),
+    "Pure Ibiza Radio":      ("https://control.streaming-pro.com:8028/status-json.xsl", "stream.mp3"),
     "Ibiza Global Classics": ("https://control.streaming-pro.com:8000/status-json.xsl", "ibizaglobalclassics.mp3"),
     "Ibiza Global Radio":    ("https://control.streaming-pro.com:8024/status-json.xsl", "stream.aac"),
 }

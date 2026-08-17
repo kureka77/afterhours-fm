@@ -1,0 +1,36 @@
+version: 2
+
+# Dependabot opens PRs for outdated dependencies and, separately, security
+# updates for anything with a published advisory. Grouped so a quiet week
+# produces one PR rather than five.
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      python-deps:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      js-deps:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # The workflows pin actions by major tag (actions/checkout@v4). Those move,
+  # but pinning is still worth updating deliberately rather than trusting a
+  # tag to stay honest.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly

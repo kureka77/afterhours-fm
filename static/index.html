@@ -9,7 +9,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="preload" as="image" href="/static/hero.webp" type="image/webp" />
   <link rel="stylesheet" href="/static/style.css" />
-  <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+  <!-- integrity: subresource integrity hash. The browser refuses to run the file
+       if its bytes don't match, so a compromised or hijacked CDN can't silently
+       swap in different JavaScript. crossorigin is required for the check to run
+       at all on a cross-origin script. Regenerate if the version pin changes:
+       curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A -->
+  <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"
+          integrity="sha384-w6Gb3fXHb5e1LUYa/hYA5Q41bEDglN5ZPCG7Jvnoo8/X90oGnlPqBlBJCe38mEMm"
+          crossorigin="anonymous"></script>
 </head>
 <body>
 

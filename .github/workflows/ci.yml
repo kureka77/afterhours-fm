@@ -104,3 +104,29 @@ jobs:
 
       - name: Run npm audit
         run: npm audit
+
+  security-python:
+    name: Security scan (bandit + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install scanners
+        run: pip install bandit pip-audit
+
+      # Bandit is a Python SAST pass — hardcoded credentials, shell injection,
+      # unsafe deserialisation, weak crypto. Tests are excluded: assert-based
+      # patterns there trip rules that only matter in production code.
+      - name: Bandit (static analysis)
+        run: bandit -r . -x ./tests,./venv,./node_modules -ll
+
+      # Dependency CVEs. vibra is installed from a pinned git commit rather than
+      # PyPI, so pip-audit cannot look it up and skips it — that is expected, and
+      # --strict would fail the build on that skip alone rather than on a real
+      # vulnerability.
+      - name: pip-audit (dependency CVEs)
+        run: pip-audit -r requirements.txt -r requirements-dev.txt

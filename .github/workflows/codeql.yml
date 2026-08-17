@@ -1,0 +1,43 @@
+name: CodeQL
+
+# GitHub's own static analysis. Free on public repos and needs no external
+# account or token, unlike SonarQube Cloud — which is why it's the SAST that
+# actually runs here. Findings land in the repo's Security tab.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly re-scan: the rule packs improve over time, so unchanged code can
+    # still start failing a check that didn't exist when it was written.
+    - cron: "17 4 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # required to upload results to the Security tab
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          # security-and-quality is a broader pack than the default; worth it on
+          # a codebase this size, where the extra noise is manageable.
+          queries: security-and-quality
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

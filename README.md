@@ -167,6 +167,35 @@ put it on a public address, read this first.
 - **Secrets are environment-only.** Nothing reads a credential from source, and `.env`
   is git-ignored. `.env.example` documents the variables with no real values.
 - **Station logos are hotlinked**, never re-hosted — see `CLAUDE.md` for the reasoning.
+- **The CDN script is pinned with subresource integrity.** hls.js carries an `integrity`
+  hash, so a compromised CDN cannot silently serve different JavaScript.
+- **Two stations are still plain `http://`** — Ibiza Global Radio and Deep Vibes publish no
+  HTTPS endpoint. Their stream and metadata therefore travel in clear text. Nothing
+  sensitive moves over them, but it does mean the app can't be served from an HTTPS-only
+  origin without those two breaking on mixed-content rules.
+
+### Automated checks
+
+Every push and pull request runs, alongside the tests:
+
+| Check | Tool | What it covers |
+|---|---|---|
+| SAST | CodeQL (`security-and-quality`) | Python + JS, results in the Security tab, plus a weekly re-scan |
+| Python SAST | Bandit | hardcoded credentials, injection, weak crypto |
+| Python deps | pip-audit | published CVEs in `requirements*.txt` |
+| JS deps | npm audit | published CVEs |
+| Updates | Dependabot | weekly pip/npm, monthly actions + docker |
+
+`sonar-project.properties` is included for anyone who wants to run SonarQube as well:
+
+```bash
+docker run -d --name sonarqube -p 9100:9000 sonarqube:community
+docker run --rm --network host -v "$PWD:/usr/src" \
+  -e SONAR_HOST_URL=http://localhost:9100 -e SONAR_TOKEN=<token> \
+  sonarsource/sonar-scanner-cli
+```
+
+Last local SonarQube run: **0 bugs, 0 vulnerabilities, 0 security hotspots**, quality gate OK.
 
 ## Adding a station
 
