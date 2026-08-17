@@ -11,10 +11,17 @@ from models import PlayedTrack
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def make_track(title="Song", artist="Artist", offset_seconds=0):
+    # .replace(tzinfo=None) mirrors what the route does at main.py:344, and is
+    # not optional: started_at is a naive TIMESTAMP column, and asyncpg refuses
+    # a tz-aware value outright while SQLite quietly stores it. Seeding rows
+    # tz-aware here passed for months on SQLite and only failed once the suite
+    # was pointed at real Postgres — the same parity gap that shipped the
+    # original production bug, reproduced in the test helper.
+    started_at = datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
     return PlayedTrack(
         title=title,
         artist=artist,
-        started_at=datetime.now(timezone.utc) + timedelta(seconds=offset_seconds),
+        started_at=started_at.replace(tzinfo=None),
     )
 
 

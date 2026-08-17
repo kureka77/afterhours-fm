@@ -230,10 +230,28 @@ make db-shell        # psql into the running prod database
 make help            # all targets
 ```
 
-Backend tests use `pytest-asyncio` in auto mode against in-memory SQLite. Note that
-`started_at` is a naive `TIMESTAMP` column: asyncpg rejects timezone-aware datetimes
-outright while SQLite silently accepts them, so always strip `tzinfo` before inserting.
-There's a regression test pinning this.
+Backend tests use `pytest-asyncio` in auto mode, against in-memory SQLite by default.
+Point them at a real PostgreSQL with:
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/db pytest
+```
+
+CI runs the suite **both ways** — `Backend tests (pytest · SQLite)` and
+`Backend tests (pytest · PostgreSQL)`. That's not redundancy. Prod runs Postgres while
+dev runs SQLite, and the engines disagree: `started_at` is a naive `TIMESTAMP`, and
+asyncpg rejects a timezone-aware datetime outright where SQLite silently accepts one.
+That gap shipped a bug to production once, because every local check passed. Running
+both engines is what closes the dev/prod parity gap rather than just documenting it.
+
+Two things follow from testing against Postgres, both handled in `tests/conftest.py`:
+
+- `test_engine` is **function-scoped**. An asyncpg connection is bound to the event
+  loop that opened it, and pytest-asyncio gives each test a fresh loop — a
+  session-scoped engine hands test two a pool from test one's dead loop. SQLite hides
+  this because aiosqlite proxies to a worker thread.
+- Row ids climb across the session rather than restarting at 1, since Postgres keeps
+  the sequence running through a `DELETE`. Nothing asserts on id values.
 
 There is no Alembic. `_ensure_station_column()` in `main.py` is a hand-rolled,
 idempotent startup guard that adds the `station` column if missing.
