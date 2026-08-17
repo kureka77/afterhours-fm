@@ -1,5 +1,7 @@
 # Afterhours FM
 
+**[Project page →](https://kureka77.github.io/afterhours-fm/)**
+
 A self-hosted web radio player for 25 Ibiza/house and European dance stations, with
 live track identification, album art, persistent play history, and one-click saving
 to Spotify.

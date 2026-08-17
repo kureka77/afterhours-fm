@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Afterhours FM — self-hosted web radio with live track ID</title>
+<meta name="description" content="A self-hosted web radio player for 25 Ibiza and European dance stations, with live track identification from ICY metadata and Shazam fingerprinting, album art, play history, and one-click Spotify saving." />
+
+<meta property="og:title" content="Afterhours FM" />
+<meta property="og:description" content="Self-hosted web radio with live track identification — ICY metadata first, Shazam fingerprinting as fallback." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="shot-player.jpg" />
+
+<link rel="icon" href="logo.webp" type="image/webp" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
+
+<style>
+  /* Palette lifted from the app's own static/style.css so the page and the
+     product read as one thing. */
+  :root {
+    --azure:     #0B7BB5;
+    --turquoise: #2BBFB0;
+    --sand:      #E8D5A3;
+    --deep:      #0A2840;
+    --deep2:     #0D3352;
+    --white:     #FFFFFF;
+    --off-white: #F8F6F2;
+    --charcoal:  #1C1C1E;
+    --muted:     #5B6B79;
+    --line:      #E2E6EA;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: "Open Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--charcoal);
+    background: var(--off-white);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .mono-label { font-family: "Montserrat", sans-serif; }
+
+  a { color: var(--azure); }
+
+  .wrap { width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Hero ────────────────────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    min-height: 78vh;
+    display: flex; align-items: center;
+    overflow: hidden;
+    color: var(--white);
+  }
+  .hero-bg {
+    position: absolute; inset: 0;
+    background: url('hero.webp') center/cover no-repeat;
+    transform: scale(1.03);
+  }
+  .hero-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(10,40,64,0.72) 0%, rgba(10,40,64,0.58) 45%, rgba(10,40,64,0.88) 100%);
+  }
+  .hero-inner { position: relative; z-index: 2; padding: 96px 0 72px; }
+
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 34px; }
+  .brand img { width: 46px; height: 46px; border-radius: 50%; }
+  .brand span {
+    font-family: "Montserrat", sans-serif; font-weight: 700;
+    letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.92rem;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.6rem, 7vw, 4.6rem);
+    font-weight: 700; line-height: 1.04; letter-spacing: -0.02em;
+    margin-bottom: 20px;
+  }
+  .hero h1 em { font-style: normal; color: var(--turquoise); }
+
+  .tagline {
+    font-size: clamp(1.02rem, 2.1vw, 1.28rem);
+    max-width: 40rem; color: rgba(255,255,255,0.9); margin-bottom: 14px;
+  }
+  .subline { max-width: 40rem; color: rgba(255,255,255,0.66); font-size: 0.98rem; }
+
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 12px 22px; border-radius: 26px;
+    font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 0.9rem;
+    text-decoration: none; transition: transform 0.15s, background 0.2s, border-color 0.2s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--turquoise); color: #06303a; }
+  .btn-primary:hover { background: #35d2c2; }
+  .btn-ghost {
+    background: rgba(255,255,255,0.08); color: var(--white);
+    border: 1px solid rgba(255,255,255,0.28);
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.16); }
+  .btn svg { width: 17px; height: 17px; fill: currentColor; }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 42px; }
+  .pill {
+    font-size: 0.76rem; padding: 4px 11px; border-radius: 13px;
+    background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.16);
+    color: rgba(255,255,255,0.82);
+  }
+
+  /* ── Sections ────────────────────────────────────────────────────────── */
+  section { padding: 76px 0; }
+  section.alt { background: var(--white); border-block: 1px solid var(--line); }
+
+  .mono-label {
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--azure); margin-bottom: 12px;
+  }
+  h2 {
+    font-size: clamp(1.6rem, 3.4vw, 2.15rem); font-weight: 700;
+    letter-spacing: -0.015em; margin-bottom: 16px; line-height: 1.2;
+  }
+  .lede { font-size: 1.04rem; color: var(--muted); max-width: 46rem; margin-bottom: 40px; }
+
+  /* ── The two-source cascade ──────────────────────────────────────────── */
+  .cascade { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .cascade { grid-template-columns: 1fr; } }
+
+  .step {
+    background: var(--white); border: 1px solid var(--line);
+    border-radius: 12px; padding: 26px 24px; position: relative;
+  }
+  section.alt .step { background: var(--off-white); }
+  .step-num {
+    font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 0.7rem;
+    letter-spacing: 0.1em; color: var(--white); background: var(--azure);
+    width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center; margin-bottom: 14px;
+  }
+  .step.fallback .step-num { background: var(--turquoise); color: #06303a; }
+  .step h3 { font-size: 1.08rem; margin-bottom: 9px; }
+  .step p { font-size: 0.93rem; color: var(--muted); }
+  .step code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em; background: rgba(11,123,181,0.08);
+    padding: 1px 5px; border-radius: 4px; color: var(--azure);
+  }
+  .step .cost {
+    margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line);
+    font-size: 0.8rem; color: var(--muted);
+  }
+  .step .cost b { color: var(--charcoal); font-weight: 600; }
+
+  .note {
+    margin-top: 22px; padding: 16px 20px; border-left: 3px solid var(--sand);
+    background: rgba(232,213,163,0.16); border-radius: 0 8px 8px 0;
+    font-size: 0.92rem; color: #6b5a33;
+  }
+
+  /* ── Shots ───────────────────────────────────────────────────────────── */
+  figure { margin: 0; }
+  figure img {
+    width: 100%; height: auto; display: block;
+    border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 18px 44px rgba(10,40,64,0.13);
+  }
+  figcaption {
+    margin-top: 12px; font-size: 0.84rem; color: var(--muted); text-align: center;
+  }
+  .shots { display: grid; gap: 40px; }
+
+  /* ── Feature grid ────────────────────────────────────────────────────── */
+  .features { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) { .features { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+
+  .feature {
+    background: var(--white); border: 1px solid var(--line);
+    border-radius: 11px; padding: 22px 20px;
+  }
+  section.alt .feature { background: var(--off-white); }
+  .feature h3 { font-size: 0.98rem; margin-bottom: 7px; }
+  .feature p { font-size: 0.89rem; color: var(--muted); }
+
+  /* ── Architecture diagram ────────────────────────────────────────────── */
+  .diagram-scroll { overflow-x: auto; padding-bottom: 8px; }
+  .diagram { min-width: 660px; width: 100%; height: auto; display: block; }
+  .d-label { font-family: "Montserrat", sans-serif; font-size: 11px; font-weight: 600; fill: var(--charcoal); }
+  .d-sub   { font-family: "Open Sans", sans-serif; font-size: 9.5px; fill: #7a8894; }
+  .d-edge  { font-family: "Open Sans", sans-serif; font-size: 9px; fill: #7a8894; }
+  .d-box   { fill: var(--white); stroke: var(--line); stroke-width: 1.2; }
+  .d-box-accent { fill: rgba(43,191,176,0.09); stroke: var(--turquoise); stroke-width: 1.2; }
+  .d-group { fill: none; stroke: #C9D2DA; stroke-width: 1; stroke-dasharray: 4 3; }
+  .d-group-label { font-family: "Montserrat", sans-serif; font-size: 9px; font-weight: 700; letter-spacing: 0.1em; fill: #9AA7B2; }
+  .d-line { stroke: #9AA7B2; stroke-width: 1.3; fill: none; }
+  .d-audio { stroke: var(--turquoise); stroke-width: 1.5; fill: none; }
+  .d-edge-audio { font-family: "Open Sans", sans-serif; font-size: 9px; fill: #2a9a90; }
+  .d-line-dash { stroke: #B6C0C9; stroke-width: 1.3; fill: none; stroke-dasharray: 4 3; }
+
+  /* ── Stack table ─────────────────────────────────────────────────────── */
+  .stack-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  .stack-table th, .stack-table td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .stack-table th {
+    font-family: "Montserrat", sans-serif; font-size: 0.66rem; font-weight: 700;
+    letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted);
+  }
+  .stack-table td:first-child { font-weight: 600; width: 32%; }
+  .stack-table td:last-child { color: var(--muted); }
+
+  /* ── Run block ───────────────────────────────────────────────────────── */
+  pre {
+    background: var(--deep); color: #D8E3EC; border-radius: 10px;
+    padding: 22px 24px; overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.86rem; line-height: 1.75;
+  }
+  pre .c { color: #6f8598; }
+  pre .p { color: var(--turquoise); }
+
+  /* ── Footer ──────────────────────────────────────────────────────────── */
+  footer {
+    background: var(--deep); color: rgba(255,255,255,0.62);
+    padding: 44px 0; font-size: 0.87rem;
+  }
+  footer a { color: var(--turquoise); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  .foot-row { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<!-- ── Hero ──────────────────────────────────────────────────────────────── -->
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-overlay"></div>
+  <div class="wrap hero-inner">
+    <div class="brand">
+      <img src="logo.webp" alt="" />
+      <span>Afterhours FM</span>
+    </div>
+
+    <h1>Web radio that<br />knows <em>what's playing</em>.</h1>
+
+    <p class="tagline">
+      A self-hosted player for 25 Ibiza and European dance stations, with live track
+      identification, album art, persistent play history, and one-click saving to Spotify.
+    </p>
+    <p class="subline">
+      Track names come from each station's own broadcast metadata where it exists, and from
+      audio fingerprinting where it doesn't — no paid recognition API in either path.
+    </p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/kureka77/afterhours-fm">
+        <svg viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
+        View on GitHub
+      </a>
+      <a class="btn btn-ghost" href="#how">How it works</a>
+      <a class="btn btn-ghost" href="#run">Run it yourself</a>
+    </div>
+
+    <div class="pill-row">
+      <span class="pill">FastAPI</span>
+      <span class="pill">async SQLAlchemy</span>
+      <span class="pill">PostgreSQL</span>
+      <span class="pill">Docker</span>
+      <span class="pill">nginx</span>
+      <span class="pill">Vanilla JS — no build step</span>
+      <span class="pill">64 tests, two database engines</span>
+      <span class="pill">MIT</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── How it works ──────────────────────────────────────────────────────── -->
+<section id="how" class="alt">
+  <div class="wrap">
+    <p class="mono-label">How track identification works</p>
+    <h2>Two sources, tried cheapest first</h2>
+    <p class="lede">
+      Most web radio players show you the station name and stop there. The interesting problem
+      is that broadcasters are wildly inconsistent about what they announce — so this uses a
+      cascade rather than a single method.
+    </p>
+
+    <div class="cascade">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>ICY in-band metadata</h3>
+        <p>
+          Icecast and SHOUTcast streams interleave a small text block into the audio every
+          <code>icy-metaint</code> bytes, carrying <code>StreamTitle='Artist - Title'</code>.
+          The backend opens the stream with <code>Icy-MetaData: 1</code>, reads exactly one
+          metadata cycle, and disconnects. It never downloads or transcodes audio.
+        </p>
+        <p class="cost">
+          <b>Cost:</b> one HTTP read, milliseconds · <b>Cached:</b> 15s per station ·
+          <b>Accuracy:</b> exact — it's the broadcaster's own announcement
+        </p>
+      </div>
+
+      <div class="step fallback">
+        <div class="step-num">2</div>
+        <h3>Shazam fingerprinting</h3>
+        <p>
+          Only reached when step 1 returns nothing usable — some stations send an empty title,
+          their own station name, or a raw JSON blob. The backend then captures ~10 seconds of
+          live audio and identifies it via <a href="https://github.com/BayernMuller/vibra">vibra</a>,
+          a C++ client for Shazam's fingerprint endpoint.
+        </p>
+        <p class="cost">
+          <b>Cost:</b> ~10–15s round trip · <b>Cached:</b> 45s, negative results included ·
+          <b>Accuracy:</b> a good guess from a short sample
+        </p>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Anything identified by fingerprinting is labelled "via Shazam" in the UI.</strong>
+      A match from a ten-second sample is a guess; the broadcaster's own metadata is not. Showing
+      the difference is more useful than pretending both are equally certain — and negative
+      results are cached too, so a station that simply doesn't match well isn't re-fingerprinted
+      on every poll.
+    </div>
+  </div>
+</section>
+
+<!-- ── Screenshots ───────────────────────────────────────────────────────── -->
+<section>
+  <div class="wrap">
+    <p class="mono-label">The app</p>
+    <h2>What it looks like running</h2>
+    <p class="lede">
+      No framework and no build step — the entire frontend is one HTML file with inline JS,
+      served straight off disk by nginx.
+    </p>
+
+    <div class="shots">
+      <figure>
+        <img src="shot-player.jpg" alt="The Afterhours FM player: a full-bleed hero photo with the station name, the currently playing track with album art, a play/pause bar, and a grid of 25 station buttons." />
+        <figcaption>
+          A live Shazam match — note the “via Shazam” tag under the title, and the album art
+          that arrived with the fingerprint result.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <img src="shot-info.jpg" alt="The info panel below the player, showing the Now Playing block with an Add to Spotify button, and a Stream Info grid with station, format, bitrate, sample rate, listeners and on-air time." />
+        <figcaption>
+          Stream stats are read from each station's own response headers — format, bitrate and
+          sample rate for any station, plus listener counts where an Icecast mount could be
+          confidently matched.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ── Architecture ──────────────────────────────────────────────────────── -->
+<section class="alt">
+  <div class="wrap">
+    <p class="mono-label">Architecture</p>
+    <h2>Where the work happens</h2>
+    <p class="lede">
+      There is no background polling task. A stream read happens only when a browser asks for
+      one, and is cached per station. Audio itself never passes through the server — the browser
+      plays each station directly.
+    </p>
+
+    <div class="diagram-scroll">
+      <svg class="diagram" viewBox="0 0 900 392" role="img" aria-labelledby="dtitle ddesc">
+        <title id="dtitle">Afterhours FM request flow</title>
+        <desc id="ddesc">The browser loads the page from nginx and requests now-playing data, which nginx proxies to FastAPI. FastAPI reads ICY metadata from radio stations, falls back to Shazam only when that is empty, queries Spotify for cover art, and persists tracks to PostgreSQL. Audio streams from the stations directly to the browser, bypassing the server.</desc>
+
+        <!-- Browser -->
+        <rect class="d-box-accent" x="16" y="150" width="120" height="52" rx="9" />
+        <text class="d-label" x="76" y="172" text-anchor="middle">Browser</text>
+        <text class="d-sub"   x="76" y="187" text-anchor="middle">vanilla JS</text>
+
+        <!-- Docker group -->
+        <rect class="d-group" x="196" y="28" width="266" height="316" rx="11" />
+        <text class="d-group-label" x="210" y="48">DOCKER — PROD STACK</text>
+
+        <rect class="d-box" x="222" y="150" width="98" height="52" rx="9" />
+        <text class="d-label" x="271" y="172" text-anchor="middle">nginx</text>
+        <text class="d-sub"   x="271" y="187" text-anchor="middle">:80 · gzip · cache</text>
+
+        <rect class="d-box" x="348" y="150" width="98" height="52" rx="9" />
+        <text class="d-label" x="397" y="172" text-anchor="middle">FastAPI</text>
+        <text class="d-sub"   x="397" y="187" text-anchor="middle">:8000 · async</text>
+
+        <rect class="d-box" x="348" y="268" width="98" height="52" rx="9" />
+        <text class="d-label" x="397" y="290" text-anchor="middle">PostgreSQL</text>
+        <text class="d-sub"   x="397" y="305" text-anchor="middle">play history</text>
+
+        <rect class="d-box" x="222" y="62" width="98" height="46" rx="9" />
+        <text class="d-label" x="271" y="81" text-anchor="middle">static/</text>
+        <text class="d-sub"   x="271" y="95" text-anchor="middle">HTML · CSS · WebP</text>
+
+        <!-- External group -->
+        <rect class="d-group" x="560" y="28" width="322" height="316" rx="11" />
+        <text class="d-group-label" x="574" y="48">EXTERNAL</text>
+
+        <rect class="d-box" x="586" y="62" width="128" height="52" rx="9" />
+        <text class="d-label" x="650" y="84" text-anchor="middle">Radio stations</text>
+        <text class="d-sub"   x="650" y="99" text-anchor="middle">ICY / Icecast</text>
+
+        <rect class="d-box" x="586" y="150" width="128" height="52" rx="9" />
+        <text class="d-label" x="650" y="172" text-anchor="middle">Shazam</text>
+        <text class="d-sub"   x="650" y="187" text-anchor="middle">via vibra</text>
+
+        <rect class="d-box" x="586" y="238" width="128" height="52" rx="9" />
+        <text class="d-label" x="650" y="260" text-anchor="middle">Spotify API</text>
+        <text class="d-sub"   x="650" y="275" text-anchor="middle">art · save track</text>
+
+        <defs>
+          <marker id="ah" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 z" fill="#9AA7B2" />
+          </marker>
+          <marker id="ahd" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 z" fill="#B6C0C9" />
+          </marker>
+          <marker id="ah-audio" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 z" fill="#2BBFB0" />
+          </marker>
+        </defs>
+
+        <!-- browser -> nginx -->
+        <path class="d-line" d="M136,168 L216,168" marker-end="url(#ah)" />
+        <text class="d-edge" x="176" y="161" text-anchor="middle">GET /api/…</text>
+
+        <!-- nginx -> static -->
+        <path class="d-line" d="M271,150 L271,114" marker-end="url(#ah)" />
+
+        <!-- nginx -> fastapi -->
+        <path class="d-line" d="M320,176 L342,176" marker-end="url(#ah)" />
+        <text class="d-edge" x="331" y="196" text-anchor="middle">proxy</text>
+
+        <!-- fastapi -> postgres -->
+        <path class="d-line" d="M397,202 L397,262" marker-end="url(#ah)" />
+        <text class="d-edge" x="404" y="236" text-anchor="start">asyncpg</text>
+
+        <!-- fastapi -> stations -->
+        <path class="d-line" d="M446,162 C510,152 520,100 580,92" marker-end="url(#ah)" />
+        <text class="d-edge" x="516" y="120" text-anchor="middle">Icy-MetaData: 1</text>
+
+        <!-- fastapi -> shazam (dashed, conditional) -->
+        <path class="d-line-dash" d="M446,176 L580,176" marker-end="url(#ahd)" />
+        <text class="d-edge" x="513" y="169" text-anchor="middle">only if ICY empty</text>
+
+        <!-- fastapi -> spotify (dashed) -->
+        <path class="d-line-dash" d="M446,192 C510,204 520,254 580,262" marker-end="url(#ahd)" />
+        <text class="d-edge" x="516" y="236" text-anchor="middle">cover art</text>
+
+        <!-- Audio path: station -> browser, bypassing the server entirely.
+             Routed below both group boxes so it never crosses an API edge, and
+             tinted turquoise because it is a different kind of flow from the
+             grey request/response arrows above. -->
+        <path class="d-audio" d="M714,88 L830,88 L830,368 L76,368 L76,208" marker-end="url(#ah-audio)" />
+        <text class="d-edge-audio" x="453" y="361" text-anchor="middle">audio streams straight to the browser — never through the server</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ── Features ──────────────────────────────────────────────────────────── -->
+<section>
+  <div class="wrap">
+    <p class="mono-label">Details worth knowing</p>
+    <h2>Built against real streams, not assumptions</h2>
+    <p class="lede">
+      Most of what follows exists because a live station behaved differently from the spec.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <h3>Broadcasters disagree on headers</h3>
+        <p>
+          <code>icy-audio-info</code> vs <code>ice-audio-info</code>, prefixed vs bare parameter
+          names, and a bitrate header that sometimes arrives duplicated as <code>"256, 256"</code>.
+          All three were found by hitting real stations.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Redirects to edge nodes</h3>
+        <p>
+          Several stations 302 to a geo-nearest node. httpx doesn't follow redirects by default
+          — unlike curl — so without <code>follow_redirects</code> you silently parse the
+          redirect instead of the stream.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Station names, never URLs</h3>
+        <p>
+          The API takes a station name and resolves the URL server-side from a registry. Accepting
+          a URL from the client would let a caller point the backend at internal addresses it can
+          reach but they can't.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Tested on both database engines</h3>
+        <p>
+          CI runs the full suite against SQLite and PostgreSQL. asyncpg rejects timezone-aware
+          datetimes where SQLite quietly accepts them — a gap that once shipped a bug that every
+          local check passed.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Honest about empty metadata</h3>
+        <p>
+          Some stations announce their own name forever, or a JSON blob instead of a title. Those
+          are filtered out and reported as no track rather than displayed as one.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Listener counts only when certain</h3>
+        <p>
+          Icecast counts are shown for the three stations whose mount could be matched with
+          confidence. One station's port serves four mounts and none map cleanly — it shows a dash
+          rather than a plausible wrong number.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Run it ────────────────────────────────────────────────────────────── -->
+<section id="run" class="alt">
+  <div class="wrap">
+    <p class="mono-label">Run it yourself</p>
+    <h2>Two commands</h2>
+    <p class="lede">
+      Playback, track identification and history need no configuration at all. The Spotify
+      variables are optional and only affect the save button and cover art for
+      metadata-sourced tracks.
+    </p>
+
+<pre><span class="c"># dev — hot reload, SQLite, http://localhost:8000</span>
+git clone https://github.com/kureka77/afterhours-fm.git
+cd afterhours-fm
+<span class="p">make dev</span>
+
+<span class="c"># prod — PostgreSQL + nginx, http://localhost</span>
+<span class="p">make prod</span></pre>
+
+    <div class="note">
+      <strong>There's no hosted demo, and that's deliberate.</strong> The recognition pipeline is
+      the point of the project, and it can't run in a browser: reading ICY metadata cross-origin
+      is blocked by CORS, fingerprinting needs a native binary, and the Spotify integration holds
+      credentials that must never reach a client. A static demo would be the shell without the
+      substance — so it runs on your own machine instead.
+    </div>
+
+    <h2 style="margin-top:52px; font-size:1.28rem;">Stack</h2>
+    <table class="stack-table">
+      <thead>
+        <tr><th>Layer</th><th>Choice</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Backend</td><td>Python 3.12, FastAPI, Uvicorn</td></tr>
+        <tr><td>Database</td><td>PostgreSQL 16 in prod, SQLite locally — async SQLAlchemy over asyncpg / aiosqlite</td></tr>
+        <tr><td>Reverse proxy</td><td>nginx — static files from disk, gzip, long-lived image caching</td></tr>
+        <tr><td>Recognition</td><td>ICY in-band metadata over httpx, with vibra/Shazam as fallback</td></tr>
+        <tr><td>Frontend</td><td>Vanilla HTML, CSS and JS — no framework, no bundler</td></tr>
+        <tr><td>Tests</td><td>pytest + pytest-asyncio, Vitest — 64 backend tests across two engines</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-row">
+    <span>MIT licensed · built as a personal project</span>
+    <span>
+      <a href="https://github.com/kureka77/afterhours-fm">Source on GitHub</a>
+    </span>
+  </div>
+  <div class="wrap" style="margin-top:16px; font-size:0.78rem; opacity:0.62; line-height:1.6;">
+    Station names, logos and audio streams belong to their respective broadcasters. This project
+    links to publicly advertised stream endpoints; it does not host, rebroadcast or redistribute
+    any audio.
+  </div>
+</footer>
+
+</body>
+</html>
