@@ -1,0 +1,123 @@
+[
+  {
+    "name": "Pure Ibiza Radio",
+    "url": "http://control.streaming-pro.com:8028/stream.mp3",
+    "format": "MP3",
+    "bitrate": "256 kbps",
+    "sampleRate": "48 kHz",
+    "logo": "https://www.radio.es/images/broadcasts/a2/7d/103588/1/c300.png"
+  },
+  {
+    "name": "Blue Marlin",
+    "url": "https://stream.radiojar.com/u7gk5agata3vv",
+    "logo": "https://www.bluemarlinibiza.com/wp-content/themes/bluemarlinibiza/favicon64.png"
+  },
+  {
+    "name": "Ibiza Global Radio",
+    "url": "http://ibizaglobalradio.streaming-pro.com:8024/",
+    "logo": "https://static-media.streema.com/media/cache/3f/59/3f598fc0753b556f206a5c9d80d034ea.jpg"
+  },
+  {
+    "name": "Ibiza Global Classics",
+    "url": "https://control.streaming-pro.com:8000/ibizaglobalclassics.mp3",
+    "logo": "https://www.ibizaglobalradio.com/dist/img/logo-igr-20.svg"
+  },
+  {
+    "name": "Radio Panama",
+    "url": "https://streaming.radiopanama.com.pa/stream",
+    "format": "AAC+"
+  },
+  {
+    "name": "Sonica",
+    "url": "https://ibizasonica.streaming-pro.com:8000/ibizasonica",
+    "logo": "https://ibizasonica.com/favicon.ico"
+  },
+  {
+    "name": "BBC Radio 4 FM",
+    "url": "https://as-hls-ww-live.akamaized.net/pool_55057080/live/ww/bbc_radio_fourfm/bbc_radio_fourfm.isml/bbc_radio_fourfm-audio%3d96000.norewind.m3u8",
+    "format": "HLS/AAC",
+    "bitrate": "96 kbps",
+    "logo": "https://cdn-radiotime-logos.tunein.com/s25419q.png"
+  },
+  {
+    "name": "Ibiza 1 Radio",
+    "url": "https://stream.rcs.revma.com/8412d256nd3vv"
+  },
+  {
+    "name": "Ibiza 1 Afrohouse",
+    "url": "https://stream.rcs.revma.com/tvnwxb275ecwv"
+  },
+  {
+    "name": "Ibiza 1 Anthems",
+    "url": "https://stream.rcs.revma.com/rp3a11ca7wnwv"
+  },
+  {
+    "name": "Ibiza 1 Poolside",
+    "url": "https://stream.rcs.revma.com/qh00tw3a0mzuv"
+  },
+  {
+    "name": "Ibiza 1 Tech House",
+    "url": "https://stream.rcs.revma.com/8raz1spmh8tvv"
+  },
+  {
+    "name": "Milano Lounge",
+    "url": "https://stream.laut.fm/milanolounge",
+    "logo": "https://assets.laut.fm/e10ac7f5356ae96d32e6dfadb89b51c7?t=_640x640"
+  },
+  {
+    "name": "Ondalatina",
+    "url": "https://stream.laut.fm/ondalatina"
+  },
+  {
+    "name": "Sunshine Live",
+    "url": "https://stream.sunshine-live.de/live/mp3-192",
+    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Sunshine_live_Logo_2022.svg/220px-Sunshine_live_Logo_2022.svg.png"
+  },
+  {
+    "name": "Sunshine Live Techno",
+    "url": "https://stream.sunshine-live.de/techno/mp3-192/",
+    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Sunshine_live_Logo_2022.svg/220px-Sunshine_live_Logo_2022.svg.png"
+  },
+  {
+    "name": "Sunshine Live House",
+    "url": "https://stream.sunshine-live.de/house/mp3-192",
+    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Sunshine_live_Logo_2022.svg/220px-Sunshine_live_Logo_2022.svg.png"
+  },
+  {
+    "name": "Antenne Chillout",
+    "url": "https://stream.antenne.de/chillout/stream/mp3"
+  },
+  {
+    "name": "Antenne Dance XXL",
+    "url": "https://s4-webradio.antenne.de/dance-xxl/stream/mp3"
+  },
+  {
+    "name": "Antenne Lounge",
+    "url": "https://s5-webradio.antenne.de/lounge/stream/mp3"
+  },
+  {
+    "name": "Antenne Bayern",
+    "url": "https://s1-webradio.antenne.de/antenne/stream/mp3",
+    "logo": "http://www.antenne.de/logos/station-antenne-bayern/apple-touch-icon.png"
+  },
+  {
+    "name": "Deep Vibes",
+    "url": "http://88.208.218.19:9106/stream"
+  },
+  {
+    "name": "m2o",
+    "url": "https://4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/master_ma.m3u8",
+    "format": "HLS/AAC",
+    "logo": "https://static.wixstatic.com/media/b9d036_f8037116300b4352aded5b469dfc8c1b~mv2.png"
+  },
+  {
+    "name": "m2o Dance",
+    "url": "https://4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2odance/radiom2odance/master_ma.m3u8",
+    "format": "HLS/AAC"
+  },
+  {
+    "name": "Dub Ninja",
+    "url": "https://dub.ninja/stream/live.m3u8",
+    "format": "HLS/AAC"
+  }
+]

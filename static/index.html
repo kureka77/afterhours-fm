@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Afterhours FM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="preload" as="image" href="/static/hero.webp" type="image/webp" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav id="mainNav">
+    <a class="nav-brand" href="#">
+      <picture>
+        <source srcset="/static/logo.webp" type="image/webp" />
+        <img class="nav-logo" src="/static/logo.png" alt="Afterhours FM logo" />
+      </picture>
+      <span class="nav-brand-text">Afterhours FM</span>
+    </a>
+    <div class="nav-right">
+      <span class="nav-station-name" id="navStationName">Pure Ibiza Radio</span>
+      <div class="nav-listeners" id="navListeners" style="display:none">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span id="listenerCount">—</span>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span> Live</div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-bg" id="heroBg"></div>
+    <div class="hero-overlay"></div>
+
+    <div class="hero-content">
+      <h1 class="hero-station" id="heroStation">Afterhours<br><span>FM</span></h1>
+
+      <div class="hero-track">
+        <p class="hero-track-placeholder" id="trackPlaceholder">Select a station to start listening</p>
+        <div class="hero-track-info" id="heroTrackInfo" style="display:none">
+          <img class="hero-track-cover" id="heroCover" alt="" style="display:none" />
+          <div class="hero-track-text">
+            <p class="hero-track-artist" id="heroArtist"></p>
+            <p class="hero-track-title"  id="heroTitle"></p>
+            <span class="hero-track-source" id="heroSource" style="display:none">via Shazam</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player bar -->
+      <div class="player-bar">
+        <button class="play-btn" id="playBtn" aria-label="Play">
+          <svg id="iconPlay"  viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          <svg id="iconPause" viewBox="0 0 24 24" style="display:none">
+            <rect x="5" y="3" width="4" height="18" rx="1"/>
+            <rect x="15" y="3" width="4" height="18" rx="1"/>
+          </svg>
+          <span class="spinner"></span>
+        </button>
+
+        <div class="player-status-wrap">
+          <span class="player-status" id="playerStatus">Stopped</span>
+          <span class="player-uptime"  id="playerUptime"></span>
+        </div>
+
+        <div class="volume-wrap">
+          <button class="mute-btn" id="muteBtn" aria-label="Toggle mute">
+            <svg id="volIconOn" viewBox="0 0 24 24">
+              <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/>
+              <path d="M15.54,8.46a5,5,0,0,1,0,7.07"/>
+              <path d="M19.07,4.93a10,10,0,0,1,0,14.14"/>
+            </svg>
+            <svg id="volIconOff" viewBox="0 0 24 24" style="display:none">
+              <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/>
+              <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+          </button>
+          <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8" aria-label="Volume" />
+        </div>
+
+        <span class="keyboard-hint" aria-hidden="true"><kbd>Space</kbd> play/pause</span>
+      </div>
+
+      <div class="error-banner" id="errorBanner" role="alert">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span id="errorMsg">Stream unavailable. Retrying…</span>
+      </div>
+
+      <!-- Station picker -->
+      <div class="stations-wrap">
+        <div class="stations-label">Choose a station</div>
+        <div class="stations-scroll" id="stationsList"></div>
+      </div>
+    </div>
+
+    <div class="scroll-cue">
+      <span>Info</span>
+      <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+
+    <audio id="radioAudio" preload="none"></audio>
+  </section>
+
+  <!-- Info section -->
+  <section class="info-section">
+    <div class="info-inner">
+
+      <!-- Now playing detail -->
+      <div class="info-block">
+        <h2>Now Playing</h2>
+        <h3 id="infoTitle">—</h3>
+        <p  id="infoAlbum"></p>
+
+        <div class="track-actions">
+          <button class="spotify-save-btn" id="spotifySaveBtn" data-state="idle" disabled aria-label="Add current track to Spotify Liked Songs">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+            <span id="spotifySaveLabel">Add to Spotify</span>
+          </button>
+          <a class="shazam-btn" href="https://www.shazam.com/" target="_blank" rel="noopener" aria-label="Name this track with Shazam">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+            Name this track with Shazam
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Stream stats -->
+      <div class="info-block">
+        <h2>Stream Info</h2>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="label">Station</div><div class="value" id="statStation">—</div></div>
+          <div class="stat-card"><div class="label">Format</div><div class="value" id="statFormat">—</div></div>
+          <div class="stat-card"><div class="label">Bitrate</div><div class="value" id="statBitrate">—</div></div>
+          <div class="stat-card"><div class="label">Sample Rate</div><div class="value" id="statSampleRate">—</div></div>
+          <div class="stat-card"><div class="label">Listeners</div><div class="value" id="listenerStat">—</div></div>
+          <div class="stat-card"><div class="label">On Air</div><div class="value" id="uptimeStat">—</div></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <p>© 2026 Afterhours FM &nbsp;·&nbsp; Ad-free &nbsp;·&nbsp; <a href="#">About</a></p>
+  </footer>
+
+  <script>
+    // ── Stations ──────────────────────────────────────────────────────────────
+    // Loaded from /api/stations at startup. stations.json in the repo root is
+    // the single source of truth, shared with the backend: this array used to
+    // be hardcoded here and each station's URL was sent to the server on every
+    // poll, which let a caller point the server at any URL it could reach
+    // (SSRF). The server now resolves URLs itself from that same file, so what
+    // arrives here is display/playback data only.
+    //
+    // logo: hotlinked (never downloaded/stored — see CLAUDE.md for the
+    // copyright reasoning), from radio-browser.info's crowd-sourced favicon
+    // field. Only set where that lookup actually resolved — most small
+    // sub-brand streams aren't in that database at all, and get the
+    // styled-text fallback instead.
+    let STATIONS = [];
+
+    const PURE_IBIZA_START = new Date("2026-04-12T09:30:29+02:00");
+    const MAX_RETRIES = 5, RETRY_DELAY = 3000;
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let activeIdx  = -1;   // no station selected yet
+    let playing    = false, muted = false, prevVol = 0.8;
+    let retries    = 0, retryTimer = null;
+    let uptimeInterval = null, sessionStart = null;
+    let hlsInstance = null;
+
+    // ── DOM ───────────────────────────────────────────────────────────────────
+    const audio           = document.getElementById("radioAudio");
+    const playBtn         = document.getElementById("playBtn");
+    const iconPlay        = document.getElementById("iconPlay");
+    const iconPause       = document.getElementById("iconPause");
+    const volSlider       = document.getElementById("volumeSlider");
+    const muteBtn         = document.getElementById("muteBtn");
+    const volIconOn       = document.getElementById("volIconOn");
+    const volIconOff      = document.getElementById("volIconOff");
+    const playerStatus    = document.getElementById("playerStatus");
+    const playerUptime    = document.getElementById("playerUptime");
+    const errorBanner     = document.getElementById("errorBanner");
+    const errorMsg        = document.getElementById("errorMsg");
+    const heroTrackInfo   = document.getElementById("heroTrackInfo");
+    const heroCover       = document.getElementById("heroCover");
+    const heroArtist      = document.getElementById("heroArtist");
+    const heroTitle       = document.getElementById("heroTitle");
+    const heroSource      = document.getElementById("heroSource");
+    const trackPlaceholder= document.getElementById("trackPlaceholder");
+    const infoTitle       = document.getElementById("infoTitle");
+    const infoAlbum       = document.getElementById("infoAlbum");
+    const navStationName  = document.getElementById("navStationName");
+    const navListeners    = document.getElementById("navListeners");
+    const listenerCount   = document.getElementById("listenerCount");
+    const listenerStat    = document.getElementById("listenerStat");
+    const uptimeStat      = document.getElementById("uptimeStat");
+    const stationsList    = document.getElementById("stationsList");
+    const statStation     = document.getElementById("statStation");
+    const statFormat      = document.getElementById("statFormat");
+    const statBitrate     = document.getElementById("statBitrate");
+    const statSampleRate  = document.getElementById("statSampleRate");
+    const spotifySaveBtn  = document.getElementById("spotifySaveBtn");
+    const spotifySaveLabel= document.getElementById("spotifySaveLabel");
+    const heroStation     = document.getElementById("heroStation");
+
+    // ── Hero bg ───────────────────────────────────────────────────────────────
+    const heroBg = document.getElementById("heroBg");
+    const bgImg  = new Image();
+    bgImg.onload = () => heroBg.classList.add("loaded");
+    bgImg.src    = "/static/hero.webp";
+
+    // ── Nav scroll ────────────────────────────────────────────────────────────
+    window.addEventListener("scroll", () => {
+      document.getElementById("mainNav").classList.toggle("scrolled", window.scrollY > 80);
+    }, { passive: true });
+
+    // ── Build station buttons ─────────────────────────────────────────────────
+    // Deferred until /api/stations answers, since the list no longer ships in
+    // this file. Nothing else needs gating on it: every other handler bails
+    // early while activeIdx is -1, which is the state until a button exists to
+    // click.
+    function buildStationButtons() {
+      stationsList.innerHTML = "";
+      STATIONS.forEach((s, i) => {
+        const btn = document.createElement("button");
+        btn.className = "station-btn";
+        btn.textContent = s.name;
+        btn.dataset.idx = i;
+        btn.addEventListener("click", () => selectStation(i));
+        stationsList.appendChild(btn);
+      });
+    }
+
+    async function loadStations() {
+      try {
+        STATIONS = await fetch("/api/stations").then(r => r.json());
+        buildStationButtons();
+      } catch {
+        // Without the list there is nothing to play, so say so rather than
+        // leaving an empty picker that looks like a styling bug.
+        stationsList.innerHTML =
+          '<span class="stations-error">Could not load stations — is the backend running?</span>';
+      }
+    }
+
+    function selectStation(idx) {
+      if (idx === activeIdx) {
+        // toggle play/pause on same station
+        if (!playing) startPlay(); else stopPlay();
+        return;
+      }
+      activeIdx = idx;
+      const s = STATIONS[idx];
+
+      // Update button states
+      stationsList.querySelectorAll(".station-btn").forEach((b, i) => {
+        b.classList.toggle("active", i === idx);
+      });
+
+      // Update hero heading + nav — real logo where we have one (hotlinked,
+      // never stored — see the STATIONS comment above), styled text otherwise.
+      heroStation.innerHTML = s.logo
+        ? `<img class="hero-station-logo" src="${s.logo}" alt="${s.name}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {textContent: '${s.name}'}))">`
+        : `<span>${s.name}</span>`;
+
+      // Update nav + stats — show what's known statically first (mainly for
+      // HLS stations, which never get live stream_info back from the API);
+      // fetchNowPlaying() overwrites with real data from the stream's own
+      // headers once the first poll lands, for any station.
+      navStationName.textContent = s.name;
+      statStation.textContent    = s.name;
+      statFormat.textContent     = s.format     || "—";
+      statBitrate.textContent    = s.bitrate    || "—";
+      statSampleRate.textContent = s.sampleRate || "—";
+      navListeners.style.display = "none";
+      listenerStat.textContent   = "—";
+
+      // Clear track info; ICY stream-title reading works for any non-HLS station
+      clearTrackInfo();
+      resetSpotifySave();
+      if (!isHls(s)) {
+        trackPlaceholder.style.display = "";
+        trackPlaceholder.textContent   = "Reading stream info…";
+        fetchNowPlaying();
+      } else {
+        trackPlaceholder.style.display = "";
+        trackPlaceholder.textContent   = "Now playing live";
+      }
+      // "On air since" is a hand-noted fact we only have for Pure Ibiza —
+      // can't generalize it to stations we don't know the start time of.
+      if (s.name === "Pure Ibiza Radio") {
+        updateUptimeStat();
+      } else {
+        uptimeStat.textContent = "—";
+      }
+
+      // Start playback
+      stopPlay();
+      setTimeout(startPlay, 80);
+    }
+
+    // ── Stream control ────────────────────────────────────────────────────────
+    function isHls(station) { return station.url.includes(".m3u8"); }
+
+    function destroyHls() {
+      if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+    }
+
+    function startPlay() {
+      if (activeIdx < 0) return;
+      clearTimeout(retryTimer);
+      hideError();
+      destroyHls();
+      const url = STATIONS[activeIdx].url;
+      setStatus("buffering");
+
+      if (url.includes(".m3u8")) {
+        if (Hls.isSupported()) {
+          hlsInstance = new Hls({ lowLatencyMode: true });
+          hlsInstance.loadSource(url);
+          hlsInstance.attachMedia(audio);
+          hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            audio.play().catch(err => { console.error(err); handleError("Could not start stream."); });
+          });
+          hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+            if (data.fatal) handleError("HLS stream error.");
+          });
+        } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+          // Safari native HLS
+          audio.src = url;
+          audio.play().catch(err => { console.error(err); handleError("Could not start stream."); });
+        } else {
+          handleError("HLS not supported in this browser.");
+        }
+      } else {
+        audio.src = url;
+        audio.play().catch(err => { console.error(err); handleError("Could not start stream."); });
+      }
+    }
+
+    function stopPlay() {
+      playing = false;
+      clearTimeout(retryTimer);
+      destroyHls();
+      audio.pause();
+      audio.src = "";
+      setStatus("stopped");
+    }
+
+    function handleError(msg) {
+      if (retries < MAX_RETRIES) {
+        retries++;
+        showError(`${msg} Retrying (${retries}/${MAX_RETRIES})…`);
+        setStatus("reconnecting");
+        retryTimer = setTimeout(() => {
+          audio.src = STATIONS[activeIdx].url;
+          audio.play().catch(() => handleError(msg));
+        }, RETRY_DELAY * retries);
+      } else {
+        showError("Stream unavailable. Please try again later.");
+        setStatus("stopped"); retries = 0;
+      }
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────────
+    function setStatus(state) {
+      playBtn.classList.toggle("buffering", state === "buffering" || state === "reconnecting");
+      playerStatus.className = "player-status" + (state === "live" ? " live" : "");
+      const labels = { stopped:"Stopped", buffering:"Connecting…", live:"● Live", reconnecting:"Reconnecting…" };
+      playerStatus.textContent = labels[state] ?? state;
+      iconPlay.style.display  = (state === "live" || state === "buffering" || state === "reconnecting") ? "none" : "";
+      iconPause.style.display = state === "live" ? "" : "none";
+      if (state !== "live") playerUptime.textContent = "";
+    }
+
+    function showError(msg) { errorMsg.textContent = msg; errorBanner.classList.add("visible"); }
+    function hideError()    { errorBanner.classList.remove("visible"); }
+
+    function clearTrackInfo() {
+      heroTrackInfo.style.display = "none";
+      heroCover.style.display = "none";
+      heroCover.src = "";
+      heroSource.style.display = "none";
+      infoTitle.textContent    = "—";
+      infoAlbum.textContent    = "";
+    }
+
+    // ── Add to Spotify ────────────────────────────────────────────────────────
+    let lastSpotifyTrackKey = null;   // artist|title the button's current state applies to
+
+    function resetSpotifySave() {
+      spotifySaveBtn.dataset.state = "idle";
+      spotifySaveBtn.disabled = true;
+      spotifySaveLabel.textContent = "Add to Spotify";
+      lastSpotifyTrackKey = null;
+    }
+
+    spotifySaveBtn.addEventListener("click", async () => {
+      if (spotifySaveBtn.dataset.state === "done") {
+        if (spotifySaveBtn.dataset.spotifyUrl) window.open(spotifySaveBtn.dataset.spotifyUrl, "_blank");
+        return;
+      }
+      if (spotifySaveBtn.dataset.state === "saving") return;
+
+      const artist = heroArtist.textContent, title = heroTitle.textContent;
+      if (!title) return;
+
+      spotifySaveBtn.dataset.state = "saving";
+      spotifySaveLabel.textContent = "Adding…";
+      try {
+        const resp = await fetch("/api/spotify/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artist, title }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          spotifySaveBtn.dataset.state = "done";
+          spotifySaveBtn.dataset.spotifyUrl = data.spotify_url;
+          spotifySaveLabel.textContent = "Added ✓ — open in Spotify";
+        } else {
+          spotifySaveBtn.dataset.state = "error";
+          spotifySaveLabel.textContent = data.detail || "Couldn't add";
+          setTimeout(() => {
+            if (spotifySaveBtn.dataset.state === "error") resetSpotifySave();
+          }, 4000);
+        }
+      } catch {
+        spotifySaveBtn.dataset.state = "error";
+        spotifySaveLabel.textContent = "Network error";
+        setTimeout(() => {
+          if (spotifySaveBtn.dataset.state === "error") resetSpotifySave();
+        }, 4000);
+      }
+    });
+
+    // ── Audio events ──────────────────────────────────────────────────────────
+    audio.addEventListener("playing", () => {
+      playing = true; retries = 0; hideError(); setStatus("live");
+      sessionStart = Date.now();
+      clearInterval(uptimeInterval);
+      uptimeInterval = setInterval(() => {
+        const s   = Math.floor((Date.now() - sessionStart) / 1000);
+        const h   = Math.floor(s / 3600);
+        const m   = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        playerUptime.textContent = h > 0
+          ? `${h}h ${m}m listening`
+          : `${m}:${String(sec).padStart(2,"0")} listening`;
+      }, 1000);
+      // HLS stations have no ICY metadata at all — that's a permanent state,
+      // so pin the generic placeholder rather than let fetchNowPlaying's
+      // "Reading stream info…" text sit there forever on every reconnect.
+      if (activeIdx >= 0 && isHls(STATIONS[activeIdx])) {
+        trackPlaceholder.style.display = "";
+        trackPlaceholder.textContent   = "Now playing live";
+      }
+    });
+    audio.addEventListener("pause",   () => { playing = false; clearInterval(uptimeInterval); });
+    audio.addEventListener("ended",   () => { playing = false; setStatus("stopped"); clearInterval(uptimeInterval); });
+    audio.addEventListener("waiting", () => { if (playing) setStatus("buffering"); });
+    audio.addEventListener("error",   () => { if (playing) handleError("Stream error."); });
+
+    // ── Play button + spacebar ────────────────────────────────────────────────
+    playBtn.addEventListener("click", () => {
+      if (activeIdx < 0) return; // nothing selected yet
+      if (!playing) startPlay(); else stopPlay();
+    });
+    document.addEventListener("keydown", e => {
+      if (e.code === "Space" && e.target === document.body) {
+        e.preventDefault();
+        if (activeIdx < 0) return;
+        if (!playing) startPlay(); else stopPlay();
+      }
+    });
+
+    // ── Volume ────────────────────────────────────────────────────────────────
+    function syncVolSlider() {
+      const v = muted ? 0 : audio.volume;
+      volSlider.value = v;
+      volSlider.style.setProperty("--vol-pct", (v * 100) + "%");
+    }
+    volSlider.addEventListener("input", () => {
+      const v = parseFloat(volSlider.value);
+      audio.volume = v; prevVol = v || prevVol;
+      muted = v === 0;
+      volIconOn.style.display  = muted ? "none" : "";
+      volIconOff.style.display = muted ? "" : "none";
+      volSlider.style.setProperty("--vol-pct", (v * 100) + "%");
+    });
+    muteBtn.addEventListener("click", () => {
+      muted = !muted; audio.volume = muted ? 0 : prevVol;
+      volIconOn.style.display  = muted ? "none" : "";
+      volIconOff.style.display = muted ? "" : "none";
+      syncVolSlider();
+    });
+    audio.volume = 0.8; syncVolSlider();
+
+    // ── On-air uptime (Pure Ibiza stream start) ───────────────────────────────
+    function updateUptimeStat() {
+      const ms = Date.now() - PURE_IBIZA_START.getTime();
+      const d  = Math.floor(ms / 86400000);
+      const h  = Math.floor((ms % 86400000) / 3600000);
+      const m  = Math.floor((ms % 3600000) / 60000);
+      uptimeStat.textContent = d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
+    }
+    setInterval(updateUptimeStat, 60_000);
+
+    // ── Stream info now-playing (ICY StreamTitle, any non-HLS station) ────────
+    // No AcoustID/audio-fingerprinting anymore — this just reads whatever the
+    // broadcaster itself announces via in-band ICY metadata. Simpler and more
+    // reliable, but it's only ever as accurate as what the station sends: some
+    // report the real track, some just their own station/show name — either
+    // way it's honest "stream info", not a guess.
+    async function fetchNowPlaying() {
+      const s = STATIONS[activeIdx];
+      if (!s || isHls(s)) return;
+      try {
+        // Station name only — the server resolves the stream URL itself from
+        // stations.json. See the STATIONS comment at the top of this script.
+        const params = new URLSearchParams({ station: s.name });
+        const data = await fetch(`/api/now-playing?${params}`).then(r => r.json());
+
+        const c  = data.current;
+        const si = data.stream_info || {};
+
+        // Stream stats: live data from the stream's own headers overrides the
+        // static per-station fallback set at selection time (mainly relevant
+        // for stations we didn't hardcode format/bitrate for).
+        if (si.format)      statFormat.textContent     = si.format;
+        if (si.bitrate)     statBitrate.textContent     = si.bitrate + " kbps";
+        if (si.sample_rate) statSampleRate.textContent  = (si.sample_rate / 1000) + " kHz";
+        if (si.listeners != null) {
+          navListeners.style.display = "";
+          listenerCount.textContent  = si.listeners.toLocaleString();
+          listenerStat.textContent   = si.listeners.toLocaleString();
+        }
+
+        if (c?.title) {
+          trackPlaceholder.style.display = "none";
+          heroTrackInfo.style.display = "flex";
+          heroArtist.textContent  = c.artist || "";
+          heroTitle.textContent   = c.title;
+          infoTitle.textContent   = c.title;
+          infoAlbum.textContent   = c.album || s.name;
+
+          if (c.cover_url) {
+            heroCover.src = c.cover_url;
+            heroCover.style.display = "";
+          } else {
+            heroCover.style.display = "none";
+            heroCover.src = "";
+          }
+          // Shazam is only ever a fallback for stations whose own ICY
+          // metadata gave nothing — worth flagging, since it's a guess from
+          // a ~10s audio sample rather than the broadcaster's own announcement.
+          heroSource.style.display = c.source === "shazam" ? "" : "none";
+
+          // New track (or first one this station selection) -> reset the
+          // Spotify button so "Added ✓" from a previous song doesn't linger.
+          const key = `${c.artist}|${c.title}`;
+          if (key !== lastSpotifyTrackKey) {
+            resetSpotifySave();
+            lastSpotifyTrackKey = key;
+            spotifySaveBtn.disabled = false;
+          }
+        } else {
+          trackPlaceholder.style.display = "";
+          trackPlaceholder.textContent   = "Reading stream info…";
+        }
+      } catch {}
+    }
+    setInterval(fetchNowPlaying, 20_000);
+
+    // ── Boot ──────────────────────────────────────────────────────────────────
+    loadStations();
+  </script>
+
+</body>
+</html>

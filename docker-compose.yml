@@ -1,0 +1,52 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app              # bind-mount source for hot-reload
+      - /app/venv           # keep container's venv, not the host's
+      - /app/node_modules   # same for node_modules
+    env_file:
+      - .env
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: afterhours_fm
+      POSTGRES_USER: afterhours_fm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - afterhours_fm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afterhours_fm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  prod:
+    build:
+      context: .
+      target: prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://afterhours_fm:${POSTGRES_PASSWORD}@db:5432/afterhours_fm
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/usr/share/nginx/html/static:ro
+    depends_on:
+      - prod
+
+volumes:
+  afterhours_fm_pgdata:

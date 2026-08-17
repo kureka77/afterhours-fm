@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+httpx
+python-dotenv
+sqlalchemy[asyncio]
+aiosqlite
+asyncpg
+# Shazam-recognition fallback (main.py falls back to this only when a
+# station's ICY metadata gives nothing usable). Pinned to a commit for
+# reproducible builds — no PyPI release exists for this project.
+vibra @ git+https://github.com/BayernMuller/vibra.git@cc75d0abb86517891648aa7208f426672d9dd59d

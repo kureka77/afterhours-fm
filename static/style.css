@@ -1,0 +1,417 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --azure:     #0B7BB5;
+  --turquoise: #2BBFB0;
+  --sand:      #E8D5A3;
+  --deep:      #0A2840;
+  --deep2:     #0D3352;
+  --white:     #FFFFFF;
+  --off-white: #F8F6F2;
+  --charcoal:  #1C1C1E;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: "Open Sans", -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--charcoal);
+  background: var(--off-white);
+}
+
+/* ── Nav ── */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  height: 60px;
+  background: rgba(10,40,64,0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  transition: background 0.3s;
+}
+nav.scrolled { background: var(--deep); }
+.nav-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.nav-logo {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  border: 2px solid rgba(43,191,176,0.6);
+  flex-shrink: 0;
+}
+.nav-brand-text {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--white);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.nav-right { display: flex; align-items: center; gap: 14px; }
+.nav-station-name {
+  font-size: 0.75rem;
+  color: var(--turquoise);
+  font-family: "Montserrat", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-listeners {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.78rem; color: rgba(255,255,255,0.65);
+}
+.nav-listeners svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: var(--turquoise);
+  stroke-width: 2; stroke-linecap: round;
+}
+.live-pill {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(239,166,60,0.2);
+  border: 1px solid rgba(239,166,60,0.5);
+  color: #EFA63C;
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.6rem; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 20px;
+}
+.live-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #EFA63C;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.4; transform:scale(.6); }
+}
+
+/* ── Hero ── */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.hero-bg {
+  position: absolute; inset: 0;
+  background: url('/static/hero.jpg') center/cover no-repeat; /* fallback */
+  background: image-set(
+    url('/static/hero.webp') type('image/webp'),
+    url('/static/hero.jpg')  type('image/jpeg')
+  ) center/cover no-repeat;
+  transform: scale(1.04);
+  transition: transform 8s ease;
+}
+.hero-bg.loaded { transform: scale(1); }
+.hero-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(10,40,64,0.35) 0%,
+    rgba(10,40,64,0.58) 50%,
+    rgba(10,40,64,0.88) 100%
+  );
+}
+.hero-content {
+  position: relative; z-index: 10;
+  text-align: center;
+  padding: 0 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  width: 100%; max-width: 760px;
+}
+.hero-station {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.8rem, 4.5vw, 3rem);
+  color: var(--white);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-shadow: 0 2px 24px rgba(0,0,0,0.4);
+}
+.hero-station span { color: var(--turquoise); }
+.hero-station-logo {
+  /* Fixed height, not height:auto + max-height — several of these are SVGs
+     with a viewBox but no explicit width/height attribute (e.g. Ibiza Global
+     Classics'), and height:auto against only a max-height resolved to ~32px
+     in testing, not the intended size — confirmed by inspecting
+     naturalWidth/clientWidth directly, not guessed. A fixed height sidesteps
+     that entirely. Capped at 120px rather than higher to limit upscaling
+     blur on the smaller favicon-sized sources (e.g. Blue Marlin's is 64x64
+     natively) — this is a compromise between "clearly visible" and "sharp".
+  */
+  height: 120px; width: auto;
+  max-width: min(85vw, 460px);
+  object-fit: contain;
+  /* A light card behind the mark — some logos (e.g. Ibiza Global Classics'
+     SVG, fill #231f20) are near-black and were rendering effectively
+     invisible against the dark hero overlay. A neutral light backdrop keeps
+     any logo visible regardless of its own color scheme, same trick
+     album-art/logo walls use for unknown assets. */
+  background: rgba(255,255,255,0.94);
+  padding: 16px 24px;
+  border-radius: 14px;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.5);
+}
+
+.hero-track { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 52px; }
+.hero-track-info { display: flex; align-items: center; gap: 12px; text-align: left; }
+.hero-track-cover {
+  width: 52px; height: 52px; border-radius: 8px; object-fit: cover;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  flex-shrink: 0;
+}
+.hero-track-text { display: flex; flex-direction: column; gap: 2px; }
+.hero-track-artist {
+  font-family: "Montserrat", sans-serif; font-weight: 600;
+  font-size: 0.85rem; color: var(--sand);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.hero-track-title { font-size: 1.25rem; color: var(--white); font-style: italic; }
+.hero-track-source {
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+}
+.hero-track-placeholder { font-size: 0.82rem; color: rgba(255,255,255,0.45); }
+
+/* ── Player bar ── */
+.player-bar {
+  background: rgba(10,40,64,0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px;
+  padding: 12px 18px;
+  display: flex; align-items: center; gap: 14px;
+  width: 100%;
+}
+.play-btn {
+  width: 48px; height: 48px; border-radius: 50%; border: none;
+  background: var(--turquoise); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; position: relative;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 4px 16px rgba(43,191,176,0.4);
+}
+.play-btn:hover  { background: #23a89a; transform: scale(1.05); }
+.play-btn:active { transform: scale(0.96); }
+.play-btn svg { width: 20px; height: 20px; fill: var(--white); position: absolute; }
+.play-btn .spinner {
+  display: none; width: 20px; height: 20px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: var(--white); border-radius: 50%;
+  animation: spin 0.7s linear infinite; position: absolute;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.play-btn.buffering svg      { display: none; }
+.play-btn.buffering .spinner { display: block; }
+
+.player-status-wrap { display: flex; flex-direction: column; gap: 1px; }
+.player-status {
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+}
+.player-status.live { color: #EFA63C; }
+.player-uptime { font-size: 0.65rem; color: rgba(255,255,255,0.3); font-variant-numeric: tabular-nums; }
+
+.volume-wrap { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.mute-btn {
+  background: none; border: none; cursor: pointer;
+  display: flex; align-items: center;
+  opacity: 0.6; transition: opacity 0.15s;
+}
+.mute-btn:hover { opacity: 1; }
+.mute-btn svg {
+  width: 18px; height: 18px;
+  fill: none; stroke: var(--white);
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 84px; height: 3px; border-radius: 2px;
+  background: linear-gradient(to right, var(--turquoise) var(--vol-pct,80%), rgba(255,255,255,0.2) var(--vol-pct,80%));
+  outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--white); cursor: pointer;
+}
+input[type=range]::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--white); cursor: pointer; border: none;
+}
+.keyboard-hint {
+  font-size: 0.62rem; color: rgba(255,255,255,0.28);
+  display: flex; align-items: center; gap: 4px;
+}
+kbd {
+  display: inline-block; padding: 1px 5px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 3px; font-size: 0.58rem;
+  color: rgba(255,255,255,0.35); font-family: inherit;
+}
+
+/* Error banner */
+.error-banner {
+  display: none;
+  background: rgba(180,30,30,0.7);
+  backdrop-filter: blur(8px);
+  color: #ffcccc; font-size: 0.78rem;
+  padding: 8px 14px; border-radius: 8px;
+  align-items: center; gap: 8px; width: 100%;
+}
+.error-banner.visible { display: flex; }
+
+/* ── Station picker ── */
+.stations-wrap {
+  position: relative; z-index: 10;
+  width: 100%; max-width: 760px;
+}
+.stations-label {
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.58rem; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 8px;
+  text-align: left;
+}
+.stations-scroll {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  justify-content: center;
+}
+/* shown in place of the buttons when /api/stations can't be reached */
+.stations-error {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.55);
+  padding: 6px 0;
+}
+.station-btn {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
+  padding: 4px 10px;
+  color: rgba(255,255,255,0.75);
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.62rem; font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.station-btn:hover {
+  background: rgba(43,191,176,0.18);
+  border-color: rgba(43,191,176,0.5);
+  color: var(--white);
+}
+.station-btn.active {
+  background: var(--turquoise);
+  border-color: var(--turquoise);
+  color: var(--deep);
+  font-weight: 700;
+}
+
+/* Scroll cue */
+.scroll-cue {
+  position: absolute; bottom: 28px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  opacity: 0.45;
+  animation: bob 2s ease-in-out infinite;
+}
+.scroll-cue span { font-size: 0.6rem; color: var(--white); letter-spacing: 0.1em; text-transform: uppercase; }
+.scroll-cue svg { width: 18px; height: 18px; stroke: var(--white); fill: none; stroke-width: 2; stroke-linecap: round; }
+@keyframes bob {
+  0%,100% { transform: translateX(-50%) translateY(0); }
+  50%      { transform: translateX(-50%) translateY(6px); }
+}
+
+/* ── Info section ── */
+.info-section { background: var(--white); padding: 56px 24px; }
+.info-inner {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start;
+}
+.info-block h2 {
+  font-family: "Montserrat", sans-serif; font-weight: 700;
+  font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--azure); margin-bottom: 10px;
+}
+.info-block h3 {
+  font-family: "Montserrat", sans-serif; font-weight: 600;
+  font-size: 1.4rem; color: var(--charcoal); margin-bottom: 4px;
+}
+.info-block p { font-size: 0.88rem; color: #777; margin-bottom: 8px; }
+
+/* Stats grid */
+.stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 8px; }
+.stat-card { background: var(--off-white); border-radius: 8px; padding: 11px 13px; }
+.stat-card .label { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #bbb; margin-bottom: 2px; }
+.stat-card .value { font-family: "Montserrat", sans-serif; font-size: 0.95rem; font-weight: 700; color: var(--charcoal); }
+
+/* Track actions: Spotify save + Shazam fallback */
+.track-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.shazam-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: 20px;
+  background: #0088ff; color: #fff;
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.75rem; font-weight: 700;
+  letter-spacing: 0.03em;
+  text-decoration: none; border: none; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  margin-left: auto;
+}
+.shazam-btn:hover  { background: #006ecc; transform: scale(1.04); }
+.shazam-btn:active { transform: scale(0.97); }
+.shazam-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+/* Add to Spotify — states via data-state: idle | saving | done | error */
+.spotify-save-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: 20px;
+  background: transparent; border: 1.5px solid #1DB954; color: #1DB954;
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.75rem; font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s, opacity 0.15s;
+}
+.spotify-save-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.spotify-save-btn:hover:not(:disabled)  { background: #1DB954; color: #fff; transform: scale(1.04); }
+.spotify-save-btn:active:not(:disabled) { transform: scale(0.97); }
+.spotify-save-btn:disabled              { opacity: 0.4; cursor: default; }
+.spotify-save-btn[data-state="saving"]  { opacity: 0.7; cursor: wait; }
+.spotify-save-btn[data-state="done"]    { background: #1DB954; color: #fff; }
+.spotify-save-btn[data-state="error"]   { border-color: #e05252; color: #e05252; }
+
+/* ── Footer ── */
+footer { background: var(--deep); padding: 26px 24px; text-align: center; }
+footer p { font-size: 0.78rem; color: rgba(255,255,255,0.35); }
+footer a { color: var(--turquoise); text-decoration: none; }
+
+audio { display: none; }
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  .info-inner { grid-template-columns: 1fr; gap: 40px; }
+  .keyboard-hint { display: none; }
+  .hero-station { font-size: 1.75rem; }
+  .nav-station-name { display: none; }
+}
