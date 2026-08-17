@@ -10,6 +10,8 @@ the whole Spotify round trip.
 import base64
 import os
 
+import config  # noqa: F401 — import for its side effect: loads .env
+
 import httpx
 
 TOKEN_URL  = "https://accounts.spotify.com/api/token"

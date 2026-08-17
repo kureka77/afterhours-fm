@@ -26,7 +26,11 @@ source venv/bin/activate
 uvicorn main:app --reload --port 8000
 ```
 
-Config is environment-only, loaded via `python-dotenv` — copy `.env.example` to `.env`.
+Config is environment-only — copy `.env.example` to `.env`. `config.py` calls
+`load_dotenv()` and is imported for that side effect by `database.py` and `spotify.py`,
+which is what makes a bare `uvicorn main:app` pick the file up; Docker gets it a second
+way, via `env_file:` in docker-compose. Real environment variables take precedence over
+the file, so compose and CI values win.
 Nothing is required to play audio or identify tracks: stream info reads each station's
 own ICY metadata, and Shazam recognition needs no API key. The Spotify variables are
 optional and only affect the save button and cover art.
@@ -37,6 +41,7 @@ optional and only affect the save button and cover art.
 afterhours-fm/
 ├── main.py               # FastAPI app — all API routes, ICY reader, caches, migration guard
 ├── stations.json         # Station registry: single source of truth AND the SSRF allowlist
+├── config.py             # load_dotenv() — imported for its side effect, see below
 ├── database.py           # Async SQLAlchemy engine, session factory, Base
 ├── models.py             # ORM model: PlayedTrack (rating column is vestigial — see below)
 ├── spotify.py            # Spotify search + save-to-Liked-Songs

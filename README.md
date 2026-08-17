@@ -142,7 +142,10 @@ uvicorn main:app --reload --port 8000
 
 ## Configuration
 
-All configuration is environment variables — see `.env.example`.
+All configuration is environment variables — see `.env.example`. Copy it to `.env`
+and it is picked up automatically: `config.py` loads it for local runs, and
+docker-compose passes it into the containers. Variables already set in the real
+environment win over the file.
 
 | Variable | Required | Purpose |
 |---|---|---|
@@ -194,6 +197,7 @@ afterhours-fm/
 ├── stations.json        # Station registry — single source of truth + SSRF allowlist
 ├── spotify.py           # Spotify search + save-to-Liked-Songs
 ├── shazam_fallback.py   # Shazam-via-vibra recognition (fallback only)
+├── config.py            # Loads .env — imported by database.py and spotify.py
 ├── database.py          # Async SQLAlchemy engine and session factory
 ├── models.py            # PlayedTrack ORM model
 ├── nginx/nginx.conf     # Static file serving, gzip, cache headers, /api/ proxy
