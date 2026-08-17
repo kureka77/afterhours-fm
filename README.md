@@ -9,21 +9,12 @@ to Spotify.
 Track names come from each station's own broadcast metadata where it exists, and from
 audio fingerprinting where it doesn't — no paid recognition API in either path.
 
-```
-┌─ nav ─────────────────────────────────────────── Pure Ibiza Radio · 1,204 ● Live ─┐
-│                                                                                   │
-│                        A F T E R H O U R S   F M                                  │
-│                                                                                   │
-│            ┌────────┐  Fatboy Slim                                                │
-│            │ cover  │  Right Here, Right Now         via Shazam                   │
-│            └────────┘                                                             │
-│                                                                                   │
-│     ( ▶ )   ● Live   4:07 listening      ──────●────  Space play/pause             │
-│                                                                                   │
-│     CHOOSE A STATION                                                              │
-│     [Pure Ibiza] [Blue Marlin] [Ibiza Global] [Sonica] [Milano Lounge] …           │
-└───────────────────────────────────────────────────────────────────────────────────┘
-```
+![The Afterhours FM player: a full-bleed hero photo with the station name, the currently
+playing track with album art and a "via Shazam" tag, a play/pause bar, and a grid of 25
+station buttons.](docs/shot-player.jpg)
+
+<p align="center"><em>A live Shazam match — the "via Shazam" tag marks a track identified by
+fingerprinting rather than announced by the broadcaster.</em></p>
 
 ## How track identification works
 
