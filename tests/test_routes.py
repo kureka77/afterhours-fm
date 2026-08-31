@@ -27,6 +27,11 @@ def make_track(title="Song", artist="Artist", offset_seconds=0):
 
 EMPTY_READ = {"artist": "", "title": "", "format": None, "bitrate": None, "sample_rate": None}
 
+# Captured before any fixture patches it: the autouse stub below replaces this
+# attribute on `main`, so the two wrapper tests at the end of this file need a
+# handle on the genuine implementation to exercise it.
+_REAL_PLAYLIST_CACHED = main._playlist_now_playing_cached
+
 
 @pytest.fixture(autouse=True)
 def _register_test_stations(monkeypatch):
@@ -52,6 +57,7 @@ def _clear_now_playing_state():
     main._icecast_cache.clear()
     main._shazam_cache.clear()
     main._cover_art_cache.clear()
+    main._playlist_cache.clear()
     yield
 
 
@@ -63,6 +69,7 @@ def _no_shazam_or_cover_art_by_default(monkeypatch):
     paths override these explicitly via _mock_shazam / _mock_cover_art."""
     _mock_shazam(monkeypatch, None)
     _mock_cover_art(monkeypatch, None)
+    _mock_playlist(monkeypatch, None)
 
 
 def _mock_icy(monkeypatch, **overrides):
@@ -91,6 +98,12 @@ def _mock_cover_art(monkeypatch, cover_url):
     async def fake(artist, title):
         return cover_url
     monkeypatch.setattr(main, "_cover_art_cached", fake)
+
+
+def _mock_playlist(monkeypatch, result):
+    async def fake(station):
+        return result
+    monkeypatch.setattr(main, "_playlist_now_playing_cached", fake)
 
 
 # ── GET /api/now-playing ───────────────────────────────────────────────────────
@@ -389,3 +402,130 @@ async def test_spotify_save_upstream_error_returns_502(client, monkeypatch):
 
     r = await client.post("/api/spotify/save", json={"artist": "A", "title": "B"})
     assert r.status_code == 502
+
+
+# ── Broadcaster playlist fallback (Sunshine Live) ──────────────────────────────
+
+async def test_playlist_not_called_when_icy_has_a_track(client, monkeypatch):
+    """Same rule as Shazam: the cheap ICY read wins, and nothing else runs."""
+    _mock_icy(monkeypatch, artist="Real Artist", title="Real Title")
+    _mock_listeners(monkeypatch, None)
+    calls = {"n": 0}
+    async def fake_playlist(station):
+        calls["n"] += 1
+        return {"artist": "P", "title": "T", "cover_url": None}
+    monkeypatch.setattr(main, "_playlist_now_playing_cached", fake_playlist)
+
+    r = await client.get("/api/now-playing", params={"station": "Test FM"})
+    assert r.json()["current"]["title"] == "Real Title"
+    assert calls["n"] == 0
+
+
+async def test_playlist_used_when_icy_gives_nothing(client, monkeypatch):
+    """The Sunshine Live case: ICY only ever announced the station name, so
+    _read_icy_now_playing now returns empty and the playlist supplies the
+    track — including cover art, which ICY-sourced tracks never carry."""
+    _mock_icy(monkeypatch)
+    _mock_listeners(monkeypatch, None)
+    _mock_playlist(monkeypatch, {
+        "artist": "Anna Reusch", "title": "Triplet King",
+        "cover_url": "https://img.example/xl.jpg",
+    })
+
+    body = (await client.get("/api/now-playing", params={"station": "Test FM"})).json()
+    assert body["current"]["artist"] == "Anna Reusch"
+    assert body["current"]["title"] == "Triplet King"
+    assert body["current"]["source"] == "playlist"
+    assert body["current"]["cover_url"] == "https://img.example/xl.jpg"
+
+
+async def test_playlist_takes_precedence_over_shazam(client, monkeypatch):
+    """Ordering matters: the playlist is the broadcaster's own data and one
+    JSON GET, Shazam is a fingerprint guess costing a ~10s audio capture. If
+    the playlist answers, Shazam must not run at all."""
+    _mock_icy(monkeypatch)
+    _mock_listeners(monkeypatch, None)
+    _mock_playlist(monkeypatch, {"artist": "P", "title": "Playlist Track", "cover_url": None})
+    calls = {"n": 0}
+    async def fake_shazam(station, url):
+        calls["n"] += 1
+        return {"artist": "S", "title": "Shazam Track", "cover_url": None}
+    monkeypatch.setattr(main, "_shazam_fallback_cached", fake_shazam)
+
+    body = (await client.get("/api/now-playing", params={"station": "Test FM"})).json()
+    assert body["current"]["title"] == "Playlist Track"
+    assert calls["n"] == 0
+
+
+async def test_shazam_still_runs_when_playlist_has_nothing(client, monkeypatch):
+    """Between tracks, or on the main simulcast where the feed carries shows
+    rather than songs, the playlist returns None — Shazam is still the last
+    resort, not skipped."""
+    _mock_icy(monkeypatch)
+    _mock_listeners(monkeypatch, None)
+    _mock_playlist(monkeypatch, None)
+    _mock_shazam(monkeypatch, {"artist": "S", "title": "Shazam Track", "cover_url": None})
+
+    body = (await client.get("/api/now-playing", params={"station": "Test FM"})).json()
+    assert body["current"]["title"] == "Shazam Track"
+    assert body["current"]["source"] == "shazam"
+
+
+async def test_playlist_cover_art_not_overridden_by_spotify_search(client, monkeypatch):
+    """The playlist brings its own cover art, so the Spotify lookup that
+    exists for bare ICY tracks must not run and overwrite it."""
+    _mock_icy(monkeypatch)
+    _mock_listeners(monkeypatch, None)
+    _mock_playlist(monkeypatch, {
+        "artist": "A", "title": "B", "cover_url": "https://playlist.example/cover.jpg",
+    })
+    calls = {"n": 0}
+    async def fake_cover(artist, title):
+        calls["n"] += 1
+        return "https://spotify.example/cover.jpg"
+    monkeypatch.setattr(main, "_cover_art_cached", fake_cover)
+
+    body = (await client.get("/api/now-playing", params={"station": "Test FM"})).json()
+    assert body["current"]["cover_url"] == "https://playlist.example/cover.jpg"
+    assert calls["n"] == 0
+
+
+async def test_playlist_track_persists_to_db(client, monkeypatch, db_session):
+    _mock_icy(monkeypatch)
+    _mock_listeners(monkeypatch, None)
+    _mock_playlist(monkeypatch, {"artist": "Prospa", "title": "This Rhythm", "cover_url": None})
+
+    await client.get("/api/now-playing", params={"station": "Test FM"})
+
+    rows = (await db_session.execute(select(PlayedTrack))).scalars().all()
+    assert [(r.artist, r.title, r.station) for r in rows] == [
+        ("Prospa", "This Rhythm", "Test FM")
+    ]
+
+
+async def test_playlist_wrapper_skips_stations_without_a_feed(monkeypatch):
+    """_playlist_now_playing_cached short-circuits on stations not in
+    sunshine_playlist.CHANNELS, so the ~20 stations with no feed never pay for
+    a request. Tests the real wrapper directly — the route-level tests above
+    stub it out, so nothing else covers this branch."""
+    calls = {"n": 0}
+    async def fake_fetch(station):
+        calls["n"] += 1
+        return {"artist": "A", "title": "B", "cover_url": None}
+    monkeypatch.setattr(main.sunshine_playlist, "fetch_for_station", fake_fetch)
+
+    assert await _REAL_PLAYLIST_CACHED("Antenne Bayern") is None
+    assert calls["n"] == 0
+
+
+async def test_playlist_wrapper_caches_including_negative_results(monkeypatch):
+    """A station between tracks must not be re-queried on every 20s poll."""
+    calls = {"n": 0}
+    async def fake_fetch(station):
+        calls["n"] += 1
+        return None
+    monkeypatch.setattr(main.sunshine_playlist, "fetch_for_station", fake_fetch)
+
+    assert await _REAL_PLAYLIST_CACHED("Sunshine Live Techno") is None
+    assert await _REAL_PLAYLIST_CACHED("Sunshine Live Techno") is None
+    assert calls["n"] == 1

@@ -13,7 +13,9 @@ Icecast/SHOUTcast servers interleave a metadata block into the audio stream ever
 `StreamTitle='Artist - Title'`. Three things vary in practice:
 
 - **Whether the title is real.** Some stations send the current track, some send their
-  own station name forever, some send an empty string.
+  own station name forever, some send an empty string. The station-name case is the
+  nastiest of the three: it looks like data, so it needs an actual check to reject
+  (see "Station name as the title" below) — an empty string at least fails obviously.
 - **Header naming.** `icy-audio-info` vs `ice-audio-info` (no *y*), and internally
   `bitrate=`/`samplerate=` vs `ice-bitrate=`/`ice-samplerate=`.
 - **Header duplication.** `icy-br` sometimes arrives twice and httpx merges it to
@@ -34,14 +36,38 @@ These work with the cheap ICY path alone — no fingerprinting needed.
 | Blue Marlin | radiojar-hosted |
 | Ibiza 1 (Radio, Afrohouse, Anthems, Poolside, Tech House) | All on `stream.rcs.revma.com`. **302 to a geo-nearest edge node** — httpx needs `follow_redirects=True` or you read the redirect instead of the stream |
 | Milano Lounge, Ondalatina | laut.fm — uses the `ice-` prefixed header variant |
-| Sunshine Live (live, techno, house) | German dance radio, 192 kbps MP3 |
 | Antenne (Chillout, Dance XXL, Lounge, Bayern) | Bavarian network |
 | Radio Panama | AAC+ |
+
+### Station name as the title — the Sunshine Live case
+
+All three Sunshine Live streams send `icy-metaint: 8192` and then a `StreamTitle`
+that is permanently the station's own name, identical to their `icy-name` header:
+
+| Stream | `icy-name` and `StreamTitle`, both |
+|---|---|
+| `live/mp3-192` | `SUNSHINE LIVE - Simulcast` |
+| `techno/mp3-192/` | `SUNSHINE LIVE - Techno` |
+| `house/mp3-192` | `SUNSHINE LIVE - House` |
+
+This was worse than sending nothing. The `" - "` split in `_read_icy_now_playing`
+turned it into artist `SUNSHINE LIVE` / title `Techno`, which reads as a real track,
+got written to `played_tracks`, and — being a non-empty title — suppressed the
+fallbacks in `now_playing()` that would have found the actual song.
+
+`_read_icy_now_playing` now drops a `StreamTitle` equal to that stream's own
+`icy-name`. Matching against the station's own header rather than a hardcoded list
+of bad titles needs no per-station upkeep. Verified against every station in
+`stations.json`: these three are the only ones where the two headers are equal, so
+no working station changed behaviour.
+
+Tracks for these come from `sunshine_playlist.py` instead — see below.
 
 ### ICY present but empty or fake — Shazam fallback territory
 
 | Station | What it actually sends |
 |---|---|
+| Sunshine Live (main simulcast) | Station name only, and its playlist feed carries shows rather than tracks — Shazam is the only source of a track name |
 | Pure Ibiza Radio | `icy-metaint` present, `StreamTitle` always empty. Occasionally a JSON blob: `StreamTitle='NOW ON AIR {"autor":...}'` — filtered by the `"{" in raw` check in `_read_icy_now_playing` |
 | Deep Vibes | Bare IP host, no usable title |
 | Sonica | Port has 4 mounts (`AutoDj.mp3`, `ibizaglobalclassics.mp3`, `livemain.mp3`, `radiojar`) and none clearly maps to Sonica — deliberately excluded from `ICECAST_STATUS` rather than guess a listener count |
@@ -62,6 +88,48 @@ track; `isHls()` skips the now-playing call entirely for them.
 | `ibizapura.streaming-pro.com:8000/ibizapura` | ICY-empty. Was dropped before the Shazam fallback existed — worth re-adding now, since the fallback makes it as usable as Pure Ibiza Radio |
 | `51.222.8.101:8000/stream` (salsa panama) | Bare-IP host, unreliable; superseded by Radio Panama's hostname-based stream |
 | `mp3channels.webradio.antenne.de/chillout` | Older Antenne endpoint, superseded by `stream.antenne.de/chillout/stream/mp3` |
+
+## Broadcaster playlist feeds
+
+Some stations publish what they're playing on their own website. That beats both
+ICY (which they may not populate) and Shazam (a guess from ~10s of audio), and it
+usually carries cover art. `sunshine_playlist.py` implements this for Sunshine Live;
+`now_playing()` tries ICY -> playlist -> Shazam.
+
+**Endpoint:** `https://iris-sunshinelive.loverad.io/search.json?station=<id>&start=<t>&end=<t>`
+— found by loading <https://www.sunshine-live.de/programm/playlist> and watching its
+network calls. Undocumented, so treat everything here as observed behaviour, not a
+contract.
+
+Three things it does that will bite:
+
+- **It ignores the UTC offset you send.** Only the naive wall-clock digits are
+  matched, against Europe/Berlin. Sending a correct `+00:00` UTC timestamp returns
+  tracks from two hours ago rather than an error — a wrong-but-plausible result that
+  would ship unnoticed. Always build the window in Berlin local time.
+- **It returns near-duplicate rows** for the same track, logged a second apart
+  (seen on `Clotur & Vault Records - Arkadia`). Take the newest airtime rather than
+  treating each row as a play.
+- **Not every channel is a track list.** Channel 3 (the main SUNSHINE LIVE
+  simulcast) returns the *show* schedule: one entry an hour, ~8s duration, carrying
+  the programme and its host (`artist="Clapcast"`, `title="Claptone"`). Mapping it
+  would publish show names as songs, so it is deliberately left out of
+  `sunshine_playlist.CHANNELS`.
+
+Channel ids come from the `<select>` on the playlist page (`value` is the id). The
+two mapped here were confirmed by Shazam-ing the live stream and checking the
+recognised track matched what the API reported for the same moment — not by assuming
+`techno/mp3-192` is the channel named TECHNO:
+
+| Station | Channel id |
+|---|---|
+| Sunshine Live Techno | 9 |
+| Sunshine Live House | 4 |
+
+Other ids seen on that page, if more channels are ever added: CLASSICS 6, HARDSTYLE
+88, NATURE ONE 15, MELODIC BEATS 83, BOUNCE 101, SCHRANZ 98, EURODANCE 71, CHILLOUT
+22, LOUNGE 10, HARDTECHNO 90, HARDCORE 91, DRUM & BASS 16, TRANCE 7, EDM 5,
+AFRO HOUSE 95, IBIZA 35, MIX MISSION 34, WORKOUT 32, 90s 11, 2000s 52, 2010s 94.
 
 ## Icecast listener counts
 

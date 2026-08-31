@@ -96,6 +96,51 @@ async def test_json_blob_is_rejected(monkeypatch):
     assert result["artist"] == "" and result["title"] == ""
 
 
+async def test_station_name_as_title_is_rejected(monkeypatch):
+    """The real Sunshine Live case: icy-name and StreamTitle are both
+    "SUNSHINE LIVE - Techno", permanently, on every one of its streams.
+
+    Unfiltered this was worse than sending nothing at all — the " - " split
+    produced artist="SUNSHINE LIVE" / title="Techno", which reads as a real
+    track, and its non-empty title suppressed the playlist and Shazam
+    fallbacks in now_playing() that do find the actual song."""
+    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='SUNSHINE LIVE - Techno';")
+    _patch_client(monkeypatch, _FakeStreamResponse(
+        {"icy-metaint": "64", "icy-name": "SUNSHINE LIVE - Techno"}, [raw]))
+    result = await main._read_icy_now_playing("http://x")
+    assert result["artist"] == "" and result["title"] == ""
+
+
+async def test_station_name_match_ignores_case_and_padding(monkeypatch):
+    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='  sunshine live - techno  ';")
+    _patch_client(monkeypatch, _FakeStreamResponse(
+        {"icy-metaint": "64", "icy-name": "SUNSHINE LIVE - Techno"}, [raw]))
+    result = await main._read_icy_now_playing("http://x")
+    assert result["artist"] == "" and result["title"] == ""
+
+
+async def test_real_track_still_passes_when_icy_name_present(monkeypatch):
+    """The guard must only fire on an exact match. Every working station in
+    stations.json sends an icy-name alongside real titles — checked against
+    all of them, and Sunshine's three streams were the only ones where the
+    two are equal."""
+    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='Milk & Sugar - Higher';")
+    _patch_client(monkeypatch, _FakeStreamResponse(
+        {"icy-metaint": "64", "icy-name": "CHILLOUT ANTENNE"}, [raw]))
+    result = await main._read_icy_now_playing("http://x")
+    assert result["artist"] == "Milk & Sugar"
+    assert result["title"] == "Higher"
+
+
+async def test_title_equal_to_icy_name_only_rejected_when_header_present(monkeypatch):
+    """No icy-name header means nothing to compare against — the title stands."""
+    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='SUNSHINE LIVE - Techno';")
+    _patch_client(monkeypatch, _FakeStreamResponse({"icy-metaint": "64"}, [raw]))
+    result = await main._read_icy_now_playing("http://x")
+    assert result["artist"] == "SUNSHINE LIVE"
+    assert result["title"] == "Techno"
+
+
 async def test_chunked_across_multiple_reads(monkeypatch):
     """Real network reads rarely land on a clean boundary — split into an
     awkward chunk size to exercise the buffering/target-tracking logic."""

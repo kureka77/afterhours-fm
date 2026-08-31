@@ -19,6 +19,7 @@ import models  # noqa: F401 — registers ORM models
 from models import PlayedTrack
 import spotify
 import shazam_fallback
+import sunshine_playlist
 
 # ── Config ────────────────────────────────────────────────────────────────────
 META_CACHE_TTL = 15    # seconds — avoid re-hitting a station's origin on rapid re-polls
@@ -27,6 +28,9 @@ META_CACHE_TTL = 15    # seconds — avoid re-hitting a station's origin on rapi
 # results, so a station stuck with no ICY metadata doesn't get hammered every
 # poll. Deliberately >= the frontend's 20s poll interval so most polls hit cache.
 SHAZAM_CACHE_TTL = 45  # seconds
+# The station's own published playlist (sunshine_playlist.py) is a plain JSON
+# GET, so it's cached like the ICY read rather than as aggressively as Shazam.
+PLAYLIST_CACHE_TTL = 15  # seconds
 
 # ── Station registry ─────────────────────────────────────────────────────────
 # stations.json is the single source of truth for which streams this app knows
@@ -63,6 +67,7 @@ _station_state: dict[str, dict] = {}
 _meta_cache: dict[str, tuple[float, dict]] = {}          # stream url -> (fetched_at, result)
 _icecast_cache: dict[str, tuple[float, dict | None]] = {}  # status url -> (fetched_at, parsed json)
 _shazam_cache: dict[str, tuple[float, dict | None]] = {}   # station -> (fetched_at, result)
+_playlist_cache: dict[str, tuple[float, dict | None]] = {} # station -> (fetched_at, result)
 _cover_art_cache: dict[str, str | None] = {}               # "artist|title" -> cover_url (no TTL — a song's art doesn't change)
 
 
@@ -139,6 +144,10 @@ async def _read_icy_now_playing(url: str, timeout: float = 10.0) -> dict:
             ) as resp:
                 result.update(_parse_stream_format(resp.headers))
 
+                # Kept to reject stations that broadcast their own name as the
+                # "current track" forever — see the icy_name check below.
+                icy_name = (resp.headers.get("icy-name") or "").strip()
+
                 metaint = int(resp.headers.get("icy-metaint", 0))
                 if not metaint:
                     return result   # e.g. non-ICY server — format info above still stands
@@ -166,6 +175,22 @@ async def _read_icy_now_playing(url: str, timeout: float = 10.0) -> dict:
     if not m or not m.group(1):
         return result
     raw = m.group(1).strip()
+    if icy_name and raw.casefold() == icy_name.casefold():
+        # The broadcaster is announcing itself, not a track. All three Sunshine
+        # Live streams do this permanently: icy-name and StreamTitle are both
+        # e.g. "SUNSHINE LIVE - Techno", forever. Left unfiltered it was worse
+        # than sending nothing — the " - " split below turned it into
+        # artist="SUNSHINE LIVE" / title="Techno", which looked like a real
+        # track, got persisted as a PlayedTrack row, and (being a non-empty
+        # title) suppressed the fallbacks in now_playing() that would have
+        # found the actual song.
+        #
+        # Matching against this station's own icy-name rather than a hardcoded
+        # list of bad titles: it needs no per-station upkeep, and it was
+        # verified against every station in stations.json — the three Sunshine
+        # streams are the only ones where the two headers are equal, so no
+        # working station changes behaviour.
+        return result
     if "{" in raw:
         # some broadcasters stuff a raw JSON blob in here instead of a plain title —
         # e.g. Pure Ibiza Radio sends StreamTitle='NOW ON AIR   {"autor":"...",...}'
@@ -221,6 +246,23 @@ async def _read_icecast_listeners_cached(station: str) -> int | None:
         if mount in (s.get("listenurl") or ""):
             return s.get("listeners")
     return None
+
+
+# ── Broadcaster playlist (only when ICY gives nothing) ─────────────────────────
+async def _playlist_now_playing_cached(station: str) -> dict | None:
+    """Rate-limited wrapper around sunshine_playlist.fetch_for_station().
+    Returns None for stations that have no playlist feed, so the caller can
+    call it unconditionally. Negative results are cached too — a station
+    between tracks shouldn't be re-queried on every poll."""
+    if station not in sunshine_playlist.CHANNELS:
+        return None
+    now = time.monotonic()
+    cached = _playlist_cache.get(station)
+    if cached and now - cached[0] < PLAYLIST_CACHE_TTL:
+        return cached[1]
+    result = await sunshine_playlist.fetch_for_station(station)
+    _playlist_cache[station] = (now, result)
+    return result
 
 
 # ── Shazam fallback (only when ICY gives nothing) ───────────────────────────────
@@ -336,9 +378,22 @@ async def now_playing(
     artist, title, cover_url, source = read["artist"], read["title"], None, "icy"
 
     if not title:
-        # ICY gave nothing usable — try Shazam (rate-limited, see SHAZAM_CACHE_TTL).
-        # Deliberately only reached when the cheap path already failed; never
-        # runs alongside a working ICY read.
+        # ICY gave nothing usable. Try the broadcaster's own published playlist
+        # before Shazam: it's one JSON GET rather than a ~10s audio capture,
+        # it's the station's own data rather than a fingerprint guess, and it
+        # arrives with real cover art. Only a few stations publish one
+        # (sunshine_playlist.CHANNELS); for everything else this is a no-op.
+        playlist = await _playlist_now_playing_cached(station)
+        if playlist and playlist.get("title"):
+            artist, title, cover_url, source = (
+                playlist["artist"], playlist["title"],
+                playlist.get("cover_url"), "playlist",
+            )
+
+    if not title:
+        # Still nothing — fall back to Shazam (rate-limited, see
+        # SHAZAM_CACHE_TTL). Deliberately only reached when both cheaper paths
+        # failed; never runs alongside a working ICY or playlist read.
         shazam = await _shazam_fallback_cached(station, url)
         if shazam and shazam.get("title"):
             artist, title, cover_url, source = shazam["artist"], shazam["title"], shazam.get("cover_url"), "shazam"
