@@ -177,7 +177,7 @@ jobs:
         run: docker build --target prod -t afterhours-fm:ci .
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: afterhours-fm:ci
           format: table
