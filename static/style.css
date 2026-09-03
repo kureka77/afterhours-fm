@@ -165,6 +165,16 @@ nav.scrolled { background: var(--deep); }
   border-radius: 14px;
   box-shadow: 0 6px 28px rgba(0,0,0,0.5);
 }
+/* Per-station opt-in, set via "logoBackground": "dark" in stations.json.
+   The light card above is the right default — it rescues near-black marks like
+   Ibiza Global Classics' SVG (fill #231f20) from vanishing into the hero. But
+   it fails the opposite case: Pure Ibiza Radio's logo is lime-on-transparent
+   and washes out on white. Flipping the default to dark would simply swap
+   which set of logos is illegible, so the exception is data-driven per station
+   rather than a global change or a CSS hack keyed on station name. */
+.hero-station-logo.on-dark {
+  background: rgba(8,12,16,0.9);
+}
 
 .hero-track { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 52px; }
 .hero-track-info { display: flex; align-items: center; gap: 12px; text-align: left; }
@@ -382,6 +392,41 @@ kbd {
 .shazam-btn:active { transform: scale(0.97); }
 .shazam-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
 
+/* States, mirroring the Spotify button's data-state pattern:
+   idle | listening | done | error. */
+
+/* A recognition is a real ~10-15s capture of the stream, so the wait is long
+   enough that the button must visibly own it — a static label would read as a
+   dead click. */
+.shazam-btn[data-state="listening"] {
+  background: #006ecc;
+  cursor: progress;
+  animation: shazam-pulse 1.2s ease-in-out infinite;
+}
+.shazam-btn[data-state="listening"]:hover { transform: none; }
+@keyframes shazam-pulse { 50% { opacity: 0.55; } }
+
+/* Identified: the button becomes a deep link to that exact track on Shazam. */
+.shazam-btn[data-state="done"] { background: #0a66c2; }
+
+.shazam-btn[data-state="error"] {
+  background: transparent;
+  border: 1.5px solid rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.65);
+}
+.shazam-btn[data-state="error"]:hover { background: rgba(255,255,255,0.08); transform: none; }
+
+/* A resolved track name is far longer than "Name this track with Shazam", so
+   cap it rather than let the button push the row out of the panel. */
+.shazam-btn span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: min(46vw, 320px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shazam-btn[data-state="listening"] { animation: none; opacity: 0.75; }
+}
+
 /* Add to Spotify — states via data-state: idle | saving | done | error */
 .spotify-save-btn {
   display: inline-flex; align-items: center; gap: 7px;
@@ -414,4 +459,47 @@ audio { display: none; }
   .keyboard-hint { display: none; }
   .hero-station { font-size: 1.75rem; }
   .nav-station-name { display: none; }
+}
+
+/* ── "Heard this before" badge ── */
+/* Sits under the track source line; deliberately quieter than the title so a
+   repeat play is noticeable without competing with what's actually playing. */
+.hero-track-heard {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.62rem; font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--sand);
+  opacity: 0.75;
+}
+
+/* ── Similar stations ── */
+.stations-similar {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.similar-label {
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.58rem; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+}
+/* Visually lighter than .station-btn — these are suggestions, not the picker. */
+.similar-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px dashed rgba(43,191,176,0.45);
+  border-radius: 14px;
+  padding: 3px 9px;
+  color: rgba(255,255,255,0.7);
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.6rem; font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.similar-btn:hover {
+  background: rgba(43,191,176,0.18);
+  border-color: var(--turquoise);
+  color: var(--white);
 }

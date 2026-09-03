@@ -5,7 +5,8 @@
     "format": "MP3",
     "bitrate": "256 kbps",
     "sampleRate": "48 kHz",
-    "logo": "https://www.radio.es/images/broadcasts/a2/7d/103588/1/c300.png"
+    "logo": "https://www.pureibizaradio.com/wp-content/uploads/2026/04/logo-pure-300x189.png",
+    "logoBackground": "dark"
   },
   {
     "name": "Blue Marlin",
@@ -25,12 +26,12 @@
   {
     "name": "Radio Panama",
     "url": "https://streaming.radiopanama.com.pa/stream",
-    "format": "AAC+"
+    "format": "AAC+",
+    "logo": "https://radiopanama.b-cdn.net/wp-content/uploads/2025/03/favicon.webp"
   },
   {
     "name": "Sonica",
-    "url": "https://ibizasonica.streaming-pro.com:8000/ibizasonica",
-    "logo": "https://ibizasonica.com/favicon.ico"
+    "url": "https://ibizasonica.streaming-pro.com:8000/ibizasonica"
   },
   {
     "name": "BBC Radio 4 FM",
@@ -66,22 +67,23 @@
   },
   {
     "name": "Ondalatina",
-    "url": "https://stream.laut.fm/ondalatina"
+    "url": "https://stream.laut.fm/ondalatina",
+    "logo": "https://assets.laut.fm/04e9b00e1c31137bc363d293b690c1a2?t=_640x640"
   },
   {
     "name": "Sunshine Live",
     "url": "https://stream.sunshine-live.de/live/mp3-192",
-    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Sunshine_live_Logo_2022.svg/220px-Sunshine_live_Logo_2022.svg.png"
+    "logo": "https://upload.sunshine-live.de/production/static/1784899758370/icons/icon_512.fmRwc30M41g.png"
   },
   {
     "name": "Sunshine Live Techno",
     "url": "https://stream.sunshine-live.de/techno/mp3-192/",
-    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Sunshine_live_Logo_2022.svg/220px-Sunshine_live_Logo_2022.svg.png"
+    "logo": "https://upload.sunshine-live.de/production/static/1784899758370/icons/icon_512.fmRwc30M41g.png"
   },
   {
     "name": "Sunshine Live House",
     "url": "https://stream.sunshine-live.de/house/mp3-192",
-    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Sunshine_live_Logo_2022.svg/220px-Sunshine_live_Logo_2022.svg.png"
+    "logo": "https://upload.sunshine-live.de/production/static/1784899758370/icons/icon_512.fmRwc30M41g.png"
   },
   {
     "name": "Antenne Chillout",
@@ -89,11 +91,13 @@
   },
   {
     "name": "Antenne Dance XXL",
-    "url": "https://s4-webradio.antenne.de/dance-xxl/stream/mp3"
+    "url": "https://s4-webradio.antenne.de/dance-xxl/stream/mp3",
+    "logo": "https://www.antenne.de/media/cache/3/version/7375/streamlogo_dance_xxl_aby-v1.jpg/b23646d717926c6c.jpg"
   },
   {
     "name": "Antenne Lounge",
-    "url": "https://s5-webradio.antenne.de/lounge/stream/mp3"
+    "url": "https://s5-webradio.antenne.de/lounge/stream/mp3",
+    "logo": "https://www.antenne.de/media/cache/3/version/7391/streamlogo_lounge_aby-v1.jpg/7d43f63e923cd195.jpg"
   },
   {
     "name": "Antenne Bayern",
@@ -113,11 +117,13 @@
   {
     "name": "m2o Dance",
     "url": "https://4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2odance/radiom2odance/master_ma.m3u8",
-    "format": "HLS/AAC"
+    "format": "HLS/AAC",
+    "logo": "https://cdn.gelestatic.it/m2o/sites/2/2022/01/cropped-M2O-LOGO-JPG-192x192.jpg"
   },
   {
     "name": "Dub Ninja",
     "url": "https://dub.ninja/stream/live.m3u8",
-    "format": "HLS/AAC"
+    "format": "HLS/AAC",
+    "logo": "https://dub.ninja/icon-180.png"
   }
 ]

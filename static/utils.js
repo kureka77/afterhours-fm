@@ -40,3 +40,16 @@ export function parseMountPoint(serverType) {
   const part = serverType.split("/")[1];
   return part ? part.toUpperCase() : "—";
 }
+
+/**
+ * Formats a play count as an English ordinal — powers the "heard this before"
+ * badge ("3rd play"). The 11/12/13 exception is why this isn't just a lookup
+ * on the last digit: 13 is "13th", not "13rd".
+ * @param {number} n — a positive integer
+ * @returns {string} — e.g. "1st", "2nd", "3rd", "4th", "13th", "21st"
+ */
+export function ordinal(n) {
+  const teens = n % 100;
+  if (teens >= 11 && teens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] || "th"}`;
+}
