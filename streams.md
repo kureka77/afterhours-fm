@@ -72,14 +72,37 @@ Tracks for these come from `sunshine_playlist.py` instead — see below.
 | Deep Vibes | Bare IP host, no usable title |
 | Sonica | Port has 4 mounts (`AutoDj.mp3`, `ibizaglobalclassics.mp3`, `livemain.mp3`, `radiojar`) and none clearly maps to Sonica — deliberately excluded from `ICECAST_STATUS` rather than guess a listener count |
 
-### HLS — no ICY concept at all
+### HLS — no ICY concept, but Shazam works via segment capture
 
-`.m3u8` streams have no in-band metadata mechanism. These play via hls.js and report no
-track; `isHls()` skips the now-playing call entirely for them.
+`.m3u8` streams have no in-band metadata mechanism, and these carry no out-of-band tags
+either — the playlists checked contain only `#EXTINF` and `#EXT-X-PROGRAM-DATE-TIME`, no
+`#EXT-X-DATERANGE` or timed-ID3 title. So there is nothing to *read*; a track name can
+only come from the audio.
 
-- BBC Radio 4 FM
-- m2o, m2o Dance
-- Dub Ninja
+They used to show a permanent "Now playing live" placeholder because `isHls()` skipped the
+now-playing call outright. They now go straight to Shazam (`shazam_fallback` resolves the
+playlist to segment URLs, concatenates the newest ones and fingerprints them), which is
+their only possible source.
+
+| Stream | Result |
+|---|---|
+| m2o | Real tracks. Verified live: `Quevedo & Elvis Crespo - LA GRACIOSA`, `Topic & A7S - Why Do You Lie to Me` |
+| m2o Dance | Real tracks. Verified live: `Unit 2 - Sunshine (Kink Remix)`, `SolyMar & Megamen - All I Need`, `Panos Pissitelis & Junior Mi - Freaky` |
+| Dub Ninja | Real tracks. Verified live: `Adam Ten & Volkoder - Got Me Crazy` |
+| BBC Radio 4 FM | No match, and correctly so — it's speech radio. Falls back to the generic live placeholder |
+
+Two things found the hard way here:
+
+- **m2o publishes no per-track feed**, so there was no cheaper source to prefer over
+  Shazam (unlike Sunshine Live). `m2o.it/playlist/` exists but renders no track list, and
+  the site's "Ora in onda" widget shows the *show/DJ* (e.g. "Vittoria Hyde") — the same
+  shape of trap as Sunshine's channel 3. Verified by loading the page and watching its
+  network calls; no now-playing API is requested.
+- **m2o's CDN drops connections intermittently** — `httpx.RemoteProtocolError: Server
+  disconnected without sending a response`, hit twice in ~10 minutes of testing. A
+  mid-capture segment failure therefore keeps the partial clip instead of losing the whole
+  attempt; one 10s segment already recognises reliably (confirmed against all three music
+  stations at both 1 and 2 segments).
 
 ### Tried and not included
 

@@ -157,3 +157,216 @@ async def test_no_op_on_current_schema(test_engine):
     await main._ensure_station_column(test_engine)
 
     assert await _stations(test_engine) == ["Sonica"]
+
+
+# ── _drop_rating_column ───────────────────────────────────────────────────────
+# The thumbs up/down feature was removed. The legacy table above still declares
+# `rating`, which makes it the natural fixture for testing the drop.
+
+async def _indexes(engine) -> set[str]:
+    """Index names on played_tracks, whichever engine is under test."""
+    async with engine.begin() as conn:
+        if engine.dialect.name == "sqlite":
+            result = await conn.exec_driver_sql("PRAGMA index_list(played_tracks)")
+            return {row[1] for row in result}
+        result = await conn.exec_driver_sql(
+            "SELECT indexname FROM pg_indexes WHERE tablename='played_tracks'"
+        )
+        return {row[0] for row in result}
+
+
+async def test_drops_rating_column_when_empty(legacy_engine):
+    assert "rating" in await _columns(legacy_engine)
+
+    await main._drop_rating_column(legacy_engine)
+
+    assert "rating" not in await _columns(legacy_engine)
+
+
+async def test_keeps_rating_column_when_it_holds_data(legacy_engine):
+    """The guard refuses to drop a column that has values in it.
+
+    The column was verified 100% empty before removal, so this should never
+    fire in practice — but a migration that silently destroys data when its
+    assumption turns out wrong is a bad trade for tidiness.
+    """
+    async with legacy_engine.begin() as conn:
+        await conn.execute(
+            _legacy_played_tracks.insert().values(
+                title="Rated", artist="A", started_at=_NAIVE_NOW, rating=1
+            )
+        )
+
+    await main._drop_rating_column(legacy_engine)
+
+    assert "rating" in await _columns(legacy_engine)
+
+
+async def test_drop_rating_is_idempotent(legacy_engine):
+    """Runs on every startup — DROP COLUMN on an absent column would raise."""
+    await main._drop_rating_column(legacy_engine)
+    await main._drop_rating_column(legacy_engine)
+    await main._drop_rating_column(legacy_engine)
+
+    assert "rating" not in await _columns(legacy_engine)
+
+
+async def test_drop_rating_no_op_on_current_schema(test_engine):
+    """The path that runs on virtually every real startup, once migrated."""
+    await main._drop_rating_column(test_engine)
+    assert "rating" not in await _columns(test_engine)
+
+
+# ── _ensure_indexes ───────────────────────────────────────────────────────────
+# create_all() only emits indexes alongside a table it is creating, so an
+# existing database never gets them from the model alone. The legacy fixture
+# reproduces exactly that: a played_tracks with no indexes on it.
+
+async def test_creates_both_indexes_when_missing(legacy_engine):
+    before = await _indexes(legacy_engine)
+    assert "ix_played_tracks_started_at" not in before
+    assert "ix_played_tracks_artist_title" not in before
+
+    await main._ensure_indexes(legacy_engine)
+
+    after = await _indexes(legacy_engine)
+    assert "ix_played_tracks_started_at" in after
+    assert "ix_played_tracks_artist_title" in after
+
+
+async def test_ensure_indexes_is_idempotent(legacy_engine):
+    await main._ensure_indexes(legacy_engine)
+    await main._ensure_indexes(legacy_engine)
+
+    after = await _indexes(legacy_engine)
+    assert "ix_played_tracks_started_at" in after
+
+
+# ── _purge_ident_rows ────────────────────────────────────────────────────
+
+async def _titles(engine) -> list:
+    async with engine.begin() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT title FROM played_tracks ORDER BY id"
+        )
+        return [row[0] for row in result]
+
+
+# These run against the current schema, not the legacy fixture: the purge
+# references `station`, and in lifespan it always runs *after*
+# _ensure_station_column, so a table without that column is a state that never
+# reaches this guard.
+
+async def test_purges_rows_with_no_artist(test_engine):
+    """The 34 real rows this cleans up were show idents: 31x Blue Marlin's
+    "Djs Blue Marlin Sessions", 2x a bare "-", one Deep Vibes show name."""
+    await _insert_current(test_engine, "", "Djs Blue Marlin Sessions", "Blue Marlin")
+    await _insert_current(test_engine, "Anyma", "Eternity", "Blue Marlin")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert await _titles(test_engine) == ["Eternity"]
+
+
+async def test_purges_whitespace_only_artist(test_engine):
+    """trim() is standard SQL and behaves identically on both engines."""
+    await _insert_current(test_engine, "   ", "Ident", "Blue Marlin")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert await _titles(test_engine) == []
+
+
+async def test_purge_is_idempotent_and_leaves_real_tracks(test_engine):
+    await _insert_current(test_engine, "Anyma", "Eternity", "Blue Marlin")
+
+    await main._purge_ident_rows(test_engine)
+    await main._purge_ident_rows(test_engine)
+
+    assert await _titles(test_engine) == ["Eternity"]
+
+
+# ── _purge_ident_rows, rule 2: artist is a prefix of its own station ──────────
+# These need the `station` column, so they run against the current schema
+# rather than the legacy fixture.
+
+async def _insert_current(engine, artist: str, title: str, station) -> None:
+    """Insert through the real model's table so SQLAlchemy binds the datetime
+    itself. Passing a datetime straight to exec_driver_sql goes through
+    sqlite3's default adapter, deprecated since Python 3.12 — and artist/title
+    here include an apostrophe ("Just Can't Get Enough"), so inlining them as
+    SQL literals isn't an option either."""
+    from models import PlayedTrack
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            PlayedTrack.__table__.insert().values(
+                title=title, artist=artist, station=station, started_at=_NAIVE_NOW
+            )
+        )
+
+
+async def _rows(engine) -> list:
+    async with engine.begin() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT artist, title FROM played_tracks ORDER BY id"
+        )
+        return [(row[0], row[1]) for row in result]
+
+
+async def test_purges_icy_name_split_rows(test_engine):
+    """The real shape: artist "SUNSHINE LIVE" / title "Techno" on station
+    "Sunshine Live Techno" — 7 such rows existed. They have a non-empty artist,
+    so the artist-less rule misses them, yet they are idents, and they made the
+    three Sunshine channels look mutually "similar" for an entirely fake
+    reason."""
+    await _insert_current(test_engine, "SUNSHINE LIVE", "Techno", "Sunshine Live Techno")
+    await _insert_current(test_engine, "Anyma", "Eternity", "Sunshine Live Techno")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert await _rows(test_engine) == [("Anyma", "Eternity")]
+
+
+async def test_purges_station_tagline_logged_under_its_own_name(test_engine):
+    """Milano Lounge logged its own tagline as a track by the same mechanism."""
+    await _insert_current(test_engine, "Milano Lounge",
+                          "Sophisticated Sounds from the Heart of Milan Italy",
+                          "Milano Lounge")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert await _rows(test_engine) == []
+
+
+async def test_purge_keeps_a_real_track_on_a_similarly_named_station(test_engine):
+    """The rule is a *prefix* match against the station the row played on, so a
+    normal artist is never at risk — only one whose name literally begins the
+    station's own name."""
+    await _insert_current(test_engine, "Anyma", "Eternity", "Sunshine Live Techno")
+    await _insert_current(test_engine, "Sunshine Anderson", "Heard It All Before", "Pure Ibiza Radio")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert sorted(await _rows(test_engine)) == [
+        ("Anyma", "Eternity"), ("Sunshine Anderson", "Heard It All Before")]
+
+
+async def test_purge_ignores_short_artist_names(test_engine):
+    """The 3-character floor: without it a one-letter artist would match every
+    station whose name starts with that letter."""
+    await _insert_current(test_engine, "M", "Pop Muzik", "Milano Lounge")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert await _rows(test_engine) == [("M", "Pop Muzik")]
+
+
+async def test_purge_does_not_treat_percent_in_artist_as_a_wildcard(test_engine):
+    """Why the rule uses substr/length rather than LIKE: an artist containing %
+    would otherwise become a wildcard pattern and delete unrelated rows."""
+    await _insert_current(test_engine, "100%", "Just Can't Get Enough", "Milano Lounge")
+
+    await main._purge_ident_rows(test_engine)
+
+    assert await _rows(test_engine) == [("100%", "Just Can't Get Enough")]

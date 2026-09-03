@@ -1,4 +1,6 @@
 """Tests for the API routes."""
+import asyncio
+import time
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select
@@ -44,6 +46,9 @@ def _register_test_stations(monkeypatch):
         "Station A":  "http://a",
         "Station B":  "http://b",
         "Ibiza Pura": "http://x",
+        # HLS: the URL serves a playlist, not audio. Shazam is its only track
+        # source — see the HLS section at the end of this file.
+        "HLS FM":     "http://cdn/radio/master.m3u8",
     })
 
 
@@ -56,8 +61,9 @@ def _clear_now_playing_state():
     main._meta_cache.clear()
     main._icecast_cache.clear()
     main._shazam_cache.clear()
-    main._cover_art_cache.clear()
+    main._spotify_cache.clear()
     main._playlist_cache.clear()
+    main._identify_in_flight.clear()
     yield
 
 
@@ -94,10 +100,15 @@ def _mock_shazam(monkeypatch, result):
     monkeypatch.setattr(main, "_shazam_fallback_cached", fake)
 
 
-def _mock_cover_art(monkeypatch, cover_url):
+def _mock_cover_art(monkeypatch, cover_url, spotify_url=None):
+    """Stub the Spotify lookup. It returns cover art *and* the track URL now —
+    the URL is persisted on the row, so tests that assert on what's stored need
+    to be able to set it."""
     async def fake(artist, title):
-        return cover_url
-    monkeypatch.setattr(main, "_cover_art_cached", fake)
+        if cover_url is None and spotify_url is None:
+            return None
+        return {"cover_url": cover_url, "spotify_url": spotify_url}
+    monkeypatch.setattr(main, "_spotify_lookup_cached", fake)
 
 
 def _mock_playlist(monkeypatch, result):
@@ -302,20 +313,25 @@ async def test_cover_art_fetched_for_icy_sourced_track(client, monkeypatch):
 
 
 async def test_shazam_cover_art_not_overridden_by_spotify_search(client, monkeypatch):
-    """Shazam already returns cover art directly — _cover_art_cached (Spotify
-    search) must not be consulted or allowed to clobber it."""
+    """Shazam returns its own cover art, which must win.
+
+    The Spotify lookup *is* still made — it's the only source of the
+    spotify_url that gets persisted on the row — but its cover must not clobber
+    the one Shazam already supplied.
+    """
     _mock_icy(monkeypatch)
     _mock_listeners(monkeypatch, None)
     _mock_shazam(monkeypatch, {"artist": "A", "title": "B", "cover_url": "https://shazam.example/cover.jpg"})
     calls = {"n": 0}
-    async def fake_cover_art(artist, title):
+    async def fake_lookup(artist, title):
         calls["n"] += 1
-        return "https://spotify.example/should-not-be-used.jpg"
-    monkeypatch.setattr(main, "_cover_art_cached", fake_cover_art)
+        return {"cover_url": "https://spotify.example/should-not-be-used.jpg",
+                "spotify_url": "https://open.spotify.com/track/abc"}
+    monkeypatch.setattr(main, "_spotify_lookup_cached", fake_lookup)
 
     r = await client.get("/api/now-playing", params={"station": "Test FM"})
     assert r.json()["current"]["cover_url"] == "https://shazam.example/cover.jpg"
-    assert calls["n"] == 0
+    assert calls["n"] == 1
 
 
 # ── GET /api/track-history ─────────────────────────────────────────────────────
@@ -480,14 +496,16 @@ async def test_playlist_cover_art_not_overridden_by_spotify_search(client, monke
         "artist": "A", "title": "B", "cover_url": "https://playlist.example/cover.jpg",
     })
     calls = {"n": 0}
-    async def fake_cover(artist, title):
+    async def fake_lookup(artist, title):
         calls["n"] += 1
-        return "https://spotify.example/cover.jpg"
-    monkeypatch.setattr(main, "_cover_art_cached", fake_cover)
+        return {"cover_url": "https://spotify.example/cover.jpg",
+                "spotify_url": "https://open.spotify.com/track/xyz"}
+    monkeypatch.setattr(main, "_spotify_lookup_cached", fake_lookup)
 
     body = (await client.get("/api/now-playing", params={"station": "Test FM"})).json()
+    # Playlist cover wins; the lookup still runs, for the spotify_url.
     assert body["current"]["cover_url"] == "https://playlist.example/cover.jpg"
-    assert calls["n"] == 0
+    assert calls["n"] == 1
 
 
 async def test_playlist_track_persists_to_db(client, monkeypatch, db_session):
@@ -529,3 +547,523 @@ async def test_playlist_wrapper_caches_including_negative_results(monkeypatch):
     assert await _REAL_PLAYLIST_CACHED("Sunshine Live Techno") is None
     assert await _REAL_PLAYLIST_CACHED("Sunshine Live Techno") is None
     assert calls["n"] == 1
+
+
+# ── HLS stations ───────────────────────────────────────────────────────────────
+# m2o, m2o Dance and Dub Ninja serve .m3u8 playlists rather than an audio
+# stream with interleaved metadata. There is no ICY concept to read, so the
+# route must not spend a request trying, and Shazam is their only track source.
+
+async def test_hls_station_does_not_attempt_an_icy_read(client, monkeypatch):
+    """An ICY read against a playlist URL would parse .m3u8 markup as audio and
+    always come back empty — one wasted request per poll, every poll."""
+    calls = {"n": 0}
+
+    async def fake_icy(url):
+        calls["n"] += 1
+        return dict(EMPTY_READ)
+
+    monkeypatch.setattr(main, "_read_icy_now_playing_cached", fake_icy)
+    _mock_shazam(monkeypatch, {"artist": "A", "title": "T", "cover_url": None})
+
+    r = await client.get("/api/now-playing", params={"station": "HLS FM"})
+    assert r.status_code == 200
+    assert calls["n"] == 0
+
+
+async def test_non_hls_station_still_reads_icy(client, monkeypatch):
+    """The other side of the branch above — the ICY path must be untouched."""
+    calls = {"n": 0}
+
+    async def fake_icy(url):
+        calls["n"] += 1
+        return {**EMPTY_READ, "artist": "Real", "title": "Track"}
+
+    monkeypatch.setattr(main, "_read_icy_now_playing_cached", fake_icy)
+
+    r = await client.get("/api/now-playing", params={"station": "Test FM"})
+    assert calls["n"] == 1
+    assert r.json()["current"]["title"] == "Track"
+
+
+async def test_hls_station_gets_its_track_from_shazam(client, monkeypatch):
+    _mock_shazam(monkeypatch, {
+        "artist": "Unit 2", "title": "Sunshine (Kink Remix)",
+        "cover_url": "https://img/cover.jpg",
+    })
+    r = await client.get("/api/now-playing", params={"station": "HLS FM"})
+    current = r.json()["current"]
+    assert current["title"] == "Sunshine (Kink Remix)"
+    assert current["artist"] == "Unit 2"
+    assert current["source"] == "shazam"
+    # Shazam supplies its own cover art, so no Spotify lookup is needed.
+    assert current["cover_url"] == "https://img/cover.jpg"
+
+
+async def test_hls_station_reports_empty_stream_info(client, monkeypatch):
+    """No ICY read means no format/bitrate headers. These must come back None
+    rather than stale or invented values — the frontend falls back to the
+    static per-station values in stations.json when they do."""
+    _mock_shazam(monkeypatch, {"artist": "A", "title": "T", "cover_url": None})
+    r = await client.get("/api/now-playing", params={"station": "HLS FM"})
+    info = r.json()["stream_info"]
+    assert info["format"] is None
+    assert info["bitrate"] is None
+    assert info["sample_rate"] is None
+
+
+async def test_hls_station_with_no_shazam_match_returns_no_track(client, monkeypatch):
+    """Speech radio (BBC Radio 4) legitimately never matches. That's an empty
+    result, not an error — the frontend shows its generic live placeholder."""
+    _mock_shazam(monkeypatch, None)
+    r = await client.get("/api/now-playing", params={"station": "HLS FM"})
+    assert r.status_code == 200
+    assert r.json()["current"] == {}
+
+
+# ── GET /api/track-stats ("heard this before") ─────────────────────────────────
+
+def _played(artist, title, station, offset_seconds=0):
+    """A PlayedTrack with a station, for the history-derived features."""
+    started = datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
+    return PlayedTrack(title=title, artist=artist, station=station,
+                       started_at=started.replace(tzinfo=None))
+
+
+async def _seed(db_session, rows):
+    for r in rows:
+        db_session.add(r)
+    await db_session.commit()
+
+
+async def test_track_stats_unknown_track_returns_zero(client):
+    r = await client.get("/api/track-stats", params={"artist": "Nobody", "title": "Nothing"})
+    assert r.status_code == 200
+    assert r.json() == {"plays": 0, "first_heard": None, "last_heard": None,
+                        "first_station": None, "stations": []}
+
+
+async def test_track_stats_counts_plays_across_stations(client, db_session):
+    await _seed(db_session, [
+        _played("Anyma", "Eternity", "Station A", -300),
+        _played("Anyma", "Eternity", "Station B", -200),
+        _played("Anyma", "Eternity", "Station A", -100),
+    ])
+    body = (await client.get("/api/track-stats",
+                             params={"artist": "Anyma", "title": "Eternity"})).json()
+    assert body["plays"] == 3
+    assert {s["station"]: s["plays"] for s in body["stations"]} == {"Station A": 2, "Station B": 1}
+
+
+async def test_track_stats_first_station_is_the_earliest_play(client, db_session):
+    """"First heard on X" must follow started_at, not insertion order."""
+    await _seed(db_session, [
+        _played("Anyma", "Eternity", "Station B", -100),   # inserted first, played later
+        _played("Anyma", "Eternity", "Station A", -900),   # the actual first play
+    ])
+    body = (await client.get("/api/track-stats",
+                             params={"artist": "Anyma", "title": "Eternity"})).json()
+    assert body["first_station"] == "Station A"
+
+
+async def test_track_stats_timestamps_carry_an_explicit_utc_offset(client, db_session):
+    """started_at is a naive TIMESTAMP holding UTC. Serialised bare it reads as
+    "2026-08-21T14:03:00", which JavaScript's Date() parses as *local* time —
+    the same naive/aware trap that shipped a bug against Postgres, pointed the
+    other way. The offset must be explicit at the API boundary."""
+    await _seed(db_session, [_played("Anyma", "Eternity", "Station A")])
+    body = (await client.get("/api/track-stats",
+                             params={"artist": "Anyma", "title": "Eternity"})).json()
+    assert body["first_heard"].endswith("+00:00")
+    assert body["last_heard"].endswith("+00:00")
+
+
+async def test_track_stats_matches_exactly_not_by_prefix(client, db_session):
+    await _seed(db_session, [
+        _played("Anyma", "Eternity", "Station A"),
+        _played("Anyma", "Eternity (Remix)", "Station A"),
+        _played("Anyma & Someone", "Eternity", "Station A"),
+    ])
+    body = (await client.get("/api/track-stats",
+                             params={"artist": "Anyma", "title": "Eternity"})).json()
+    assert body["plays"] == 1
+
+
+# ── GET /api/similar-stations ──────────────────────────────────────────────────
+
+async def test_similar_stations_rejects_unknown_station(client):
+    r = await client.get("/api/similar-stations", params={"station": "Totally Made Up"})
+    assert r.status_code == 404
+
+
+async def test_similar_stations_empty_without_history(client):
+    body = (await client.get("/api/similar-stations", params={"station": "Test FM"})).json()
+    assert body == {"station": "Test FM", "similar": []}
+
+
+async def test_similar_stations_ranks_by_jaccard_not_shared_count(client, db_session):
+    """The whole reason for Jaccard rather than a raw shared-artist count.
+
+    Station A shares *more* artists in absolute terms but has a huge catalogue,
+    so the overlap is a small fraction of it. Station B is a near-perfect match.
+    Ranking by count would put A first, which is how "the station with the most
+    history wins every list" happens — in the real data Pure Ibiza Radio holds
+    ~60% of all rows.
+    """
+    rows = [_played("Anyma", "T1", "Test FM"),
+            _played("Argy", "T2", "Test FM"),
+            _played("Bedouin", "T3", "Test FM")]
+    # Station A: shares all 3, but 40 artists in total -> 3/40 = 0.075
+    rows += [_played(a, f"x{i}", "Station A") for i, a in enumerate(["Anyma", "Argy", "Bedouin"])]
+    rows += [_played(f"Filler {i}", f"f{i}", "Station A") for i in range(37)]
+    # Station B: shares 2, and has only those 2 -> 2/3 = 0.667
+    rows += [_played("Anyma", "y1", "Station B"), _played("Argy", "y2", "Station B")]
+    await _seed(db_session, rows)
+
+    similar = (await client.get("/api/similar-stations",
+                                params={"station": "Test FM"})).json()["similar"]
+    assert [s["station"] for s in similar] == ["Station B", "Station A"]
+    assert similar[0]["shared_artists"] == 2   # fewer shared...
+    assert similar[1]["shared_artists"] == 3   # ...but ranked higher
+    assert similar[0]["score"] > similar[1]["score"]
+
+
+async def test_similar_stations_excludes_itself(client, db_session):
+    await _seed(db_session, [
+        _played("Anyma", "T1", "Test FM"),
+        _played("Anyma", "T2", "Station A"),
+    ])
+    similar = (await client.get("/api/similar-stations",
+                                params={"station": "Test FM"})).json()["similar"]
+    assert [s["station"] for s in similar] == ["Station A"]
+
+
+async def test_similar_stations_excludes_stations_not_in_the_registry(client, db_session):
+    """The table also holds rows for stations since removed from stations.json.
+    Recommending one the picker can't select would be a dead end."""
+    await _seed(db_session, [
+        _played("Anyma", "T1", "Test FM"),
+        _played("Anyma", "T2", "Retired Station"),
+    ])
+    similar = (await client.get("/api/similar-stations",
+                                params={"station": "Test FM"})).json()["similar"]
+    assert similar == []
+
+
+async def test_similar_stations_matches_artists_case_insensitively(client, db_session):
+    """Broadcasters are wildly inconsistent about capitalisation — the real
+    data has both "ANYMA" and "Anyma" styles across stations."""
+    await _seed(db_session, [
+        _played("Anyma", "T1", "Test FM"),
+        _played("ANYMA", "T2", "Station A"),
+    ])
+    similar = (await client.get("/api/similar-stations",
+                                params={"station": "Test FM"})).json()["similar"]
+    assert len(similar) == 1
+    assert similar[0]["shared_artists"] == 1
+
+
+async def test_similar_stations_returns_example_artists(client, db_session):
+    await _seed(db_session, [
+        _played("Anyma", "T1", "Test FM"), _played("Argy", "T2", "Test FM"),
+        _played("Anyma", "T3", "Station A"), _played("Argy", "T4", "Station A"),
+    ])
+    similar = (await client.get("/api/similar-stations",
+                                params={"station": "Test FM"})).json()["similar"]
+    assert similar[0]["examples"] == ["Anyma", "Argy"]
+
+
+async def test_similar_stations_respects_limit(client, db_session):
+    rows = [_played("Anyma", "T1", "Test FM")]
+    rows += [_played("Anyma", f"t{i}", s) for i, s in enumerate(["Station A", "Station B", "Ibiza Pura"])]
+    await _seed(db_session, rows)
+
+    similar = (await client.get("/api/similar-stations",
+                                params={"station": "Test FM", "limit": 2})).json()["similar"]
+    assert len(similar) == 2
+
+
+# ── spotify_url persistence ────────────────────────────────────────────────────
+
+async def test_spotify_url_is_persisted_on_the_row(client, monkeypatch, db_session):
+    """The column existed from the first schema and nothing ever wrote to it —
+    all 1,548 rows logged before this had it NULL while this exact lookup was
+    being made and its URL discarded."""
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    _mock_cover_art(monkeypatch, "https://img/cover.jpg",
+                    spotify_url="https://open.spotify.com/track/abc123")
+
+    await client.get("/api/now-playing", params={"station": "Test FM"})
+
+    row = (await db_session.execute(select(PlayedTrack))).scalars().one()
+    assert row.spotify_url == "https://open.spotify.com/track/abc123"
+
+
+async def test_no_spotify_match_leaves_url_null(client, monkeypatch, db_session):
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    _mock_cover_art(monkeypatch, None)
+
+    await client.get("/api/now-playing", params={"station": "Test FM"})
+
+    row = (await db_session.execute(select(PlayedTrack))).scalars().one()
+    assert row.spotify_url is None
+
+
+# ── POST /api/identify (the "Name this track" button) ──────────────────────────
+# Replaces a link to shazam.com's homepage, where the user had to click Shazam's
+# mic button and let it listen through the *device microphone* — so it heard the
+# room, not the stream. This runs the recognition the server already does.
+
+def _mock_recognize(monkeypatch, result, calls=None):
+    async def fake(url):
+        if calls is not None:
+            calls["n"] += 1
+            calls["url"] = url
+        return result
+    monkeypatch.setattr(main.shazam_fallback, "recognize_stream", fake)
+
+
+async def test_identify_rejects_unknown_station(client):
+    """Same SSRF reasoning as /api/now-playing — a name, never a URL."""
+    r = await client.post("/api/identify", params={"station": "Totally Made Up"})
+    assert r.status_code == 404
+
+
+async def test_identify_returns_the_match(client, monkeypatch):
+    _mock_recognize(monkeypatch, {"artist": "Anyma", "title": "Eternity",
+                                  "cover_url": "https://img/c.jpg",
+                                  "shazam_url": "https://www.shazam.com/track/123"})
+    body = (await client.post("/api/identify", params={"station": "Test FM"})).json()
+    assert body["match"]["artist"] == "Anyma"
+    assert body["match"]["title"] == "Eternity"
+    # The deep link is the point: the old button could only reach shazam.com's
+    # front page, never the identified track.
+    assert body["match"]["shazam_url"] == "https://www.shazam.com/track/123"
+
+
+async def test_identify_bypasses_the_negative_cache(client, monkeypatch):
+    """The whole reason this endpoint exists rather than reusing
+    _shazam_fallback_cached.
+
+    The automatic path caches *misses* for SHAZAM_CACHE_TTL, and the user
+    presses this button precisely because the automatic path came back empty.
+    Replaying the cached miss would make the button look broken.
+    """
+    main._shazam_cache["Test FM"] = (time.monotonic(), None)   # a fresh cached miss
+    calls = {"n": 0}
+    _mock_recognize(monkeypatch, {"artist": "A", "title": "B", "cover_url": None,
+                                  "shazam_url": None}, calls)
+
+    body = (await client.post("/api/identify", params={"station": "Test FM"})).json()
+
+    assert calls["n"] == 1          # actually re-listened
+    assert body["match"]["title"] == "B"
+
+
+async def test_identify_primes_the_cache_for_the_next_poll(client, monkeypatch):
+    """On success the result goes into _shazam_cache, so the next
+    /api/now-playing picks it up through the normal path and persists it —
+    rather than this endpoint carrying a second copy of the persistence logic."""
+    _mock_recognize(monkeypatch, {"artist": "Anyma", "title": "Eternity",
+                                  "cover_url": None, "shazam_url": None})
+
+    await client.post("/api/identify", params={"station": "Test FM"})
+
+    cached = main._shazam_cache.get("Test FM")
+    assert cached is not None and cached[1]["title"] == "Eternity"
+
+
+async def test_identify_no_match_is_200_not_an_error(client, monkeypatch):
+    """A miss is a normal outcome — speech radio, a DJ talking over the intro,
+    a track Shazam doesn't hold. The frontend needs to say "no match", not
+    "request failed"."""
+    _mock_recognize(monkeypatch, None)
+    r = await client.post("/api/identify", params={"station": "Test FM"})
+    assert r.status_code == 200
+    assert r.json() == {"match": None}
+
+
+async def test_identify_blank_title_counts_as_no_match(client, monkeypatch):
+    _mock_recognize(monkeypatch, {"artist": "A", "title": "", "cover_url": None})
+    body = (await client.post("/api/identify", params={"station": "Test FM"})).json()
+    assert body == {"match": None}
+
+
+async def test_identify_does_not_cache_a_miss(client, monkeypatch):
+    """A no-match must not poison the cache — otherwise pressing the button
+    would suppress the automatic fallback for the next SHAZAM_CACHE_TTL."""
+    _mock_recognize(monkeypatch, None)
+    await client.post("/api/identify", params={"station": "Test FM"})
+    assert "Test FM" not in main._shazam_cache
+
+
+async def test_identify_rejects_a_concurrent_request_for_the_same_station(client, monkeypatch):
+    """A recognition is a real ~10-15s capture. Without the guard, tapping the
+    button repeatedly stacks concurrent captures against the same stream."""
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(url):
+        started.set()
+        await release.wait()
+        return {"artist": "A", "title": "B", "cover_url": None, "shazam_url": None}
+
+    monkeypatch.setattr(main.shazam_fallback, "recognize_stream", slow)
+
+    first = asyncio.create_task(client.post("/api/identify", params={"station": "Test FM"}))
+    await started.wait()
+    second = await client.post("/api/identify", params={"station": "Test FM"})
+    release.set()
+
+    assert second.status_code == 429
+    assert (await first).status_code == 200
+
+
+async def test_identify_allows_a_different_station_concurrently(client, monkeypatch):
+    """The guard is per station, not global — two stations can be identified at
+    once."""
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(url):
+        started.set()
+        await release.wait()
+        return {"artist": "A", "title": "B", "cover_url": None, "shazam_url": None}
+
+    monkeypatch.setattr(main.shazam_fallback, "recognize_stream", slow)
+
+    first = asyncio.create_task(client.post("/api/identify", params={"station": "Station A"}))
+    await started.wait()
+    release.set()
+    second = await client.post("/api/identify", params={"station": "Station B"})
+
+    assert second.status_code == 200
+    assert (await first).status_code == 200
+
+
+async def test_identify_releases_the_guard_when_recognition_raises(client, monkeypatch):
+    """recognize_stream is documented never to raise, but if it ever did, a
+    leaked flag would make that station permanently unidentifiable."""
+    async def boom(url):
+        raise RuntimeError("vibra exploded")
+
+    monkeypatch.setattr(main.shazam_fallback, "recognize_stream", boom)
+
+    with pytest.raises(RuntimeError):
+        await client.post("/api/identify", params={"station": "Test FM"})
+
+    assert "Test FM" not in main._identify_in_flight
+
+
+async def test_identify_works_for_hls_stations(client, monkeypatch):
+    """HLS stations have no broadcaster metadata at all, so the manual button
+    matters most there."""
+    calls = {"n": 0}
+    _mock_recognize(monkeypatch, {"artist": "A", "title": "B", "cover_url": None,
+                                  "shazam_url": None}, calls)
+
+    body = (await client.post("/api/identify", params={"station": "HLS FM"})).json()
+
+    assert body["match"]["title"] == "B"
+    assert calls["url"].endswith(".m3u8")
+
+
+# ── Stale current-track expiry ─────────────────────────────────────────────────
+# state["current"] used to be written and never cleared, so the first track a
+# station ever matched stayed on screen indefinitely — a Shazam-only station
+# like Radio Panama could sit on one stale, possibly wrong, guess for hours.
+
+async def _poll(client, station="Test FM"):
+    return (await client.get("/api/now-playing", params={"station": station})).json()
+
+
+def _freeze(monkeypatch, at):
+    monkeypatch.setattr(main.time, "monotonic", lambda: at)
+
+
+async def test_current_track_expires_when_nothing_confirms_it(client, monkeypatch):
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    assert (await _poll(client))["current"]["title"] == "Eternity"
+
+    # The station goes quiet and more than the TTL passes.
+    _mock_icy(monkeypatch)
+    _freeze(monkeypatch, time.monotonic() + main.CURRENT_TRACK_TTL + 1)
+
+    assert (await _poll(client))["current"] == {}
+
+
+async def test_current_track_survives_a_brief_gap(client, monkeypatch):
+    """A couple of failed recognitions mid-track — a DJ talking over an intro,
+    a bad transition — must not blank a correct answer."""
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    await _poll(client)
+
+    _mock_icy(monkeypatch)
+    _freeze(monkeypatch, time.monotonic() + main.CURRENT_TRACK_TTL - 10)
+
+    assert (await _poll(client))["current"]["title"] == "Eternity"
+
+
+async def test_a_confirming_poll_refreshes_the_expiry(client, monkeypatch):
+    """Why confirmed_at updates on every poll that yields a title, not only on
+    a *change*: a working ICY station repeats its StreamTitle on every read, so
+    a long track must keep being renewed rather than ageing out mid-play."""
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    t0 = time.monotonic()
+    await _poll(client)
+
+    # Nearly the whole TTL passes, then the same track is reported again.
+    _freeze(monkeypatch, t0 + main.CURRENT_TRACK_TTL - 5)
+    await _poll(client)
+
+    # Another near-TTL passes with silence. Without the refresh above, the
+    # total elapsed (~2x TTL) would have expired it.
+    _mock_icy(monkeypatch)
+    _freeze(monkeypatch, t0 + 2 * (main.CURRENT_TRACK_TTL - 5))
+
+    assert (await _poll(client))["current"]["title"] == "Eternity"
+
+
+async def test_expired_track_is_moved_to_history(client, monkeypatch):
+    """It did play — same as when a new track displaces it."""
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    await _poll(client)
+
+    _mock_icy(monkeypatch)
+    _freeze(monkeypatch, time.monotonic() + main.CURRENT_TRACK_TTL + 1)
+    body = await _poll(client)
+
+    assert body["current"] == {}
+    assert [h["title"] for h in body["history"]] == ["Eternity"]
+
+
+async def test_expiry_does_not_fire_when_there_is_no_current_track(client, monkeypatch):
+    """A station that has never matched anything must not push an empty dict
+    into history on every poll."""
+    _mock_icy(monkeypatch)
+    _mock_listeners(monkeypatch, None)
+    _freeze(monkeypatch, time.monotonic() + main.CURRENT_TRACK_TTL * 10)
+
+    body = await _poll(client)
+    assert body["current"] == {}
+    assert body["history"] == []
+
+
+async def test_a_working_icy_station_never_expires(client, monkeypatch):
+    """The safety property that makes a blanket TTL acceptable: a healthy
+    station reports its title on every read, so it re-confirms continuously.
+    Verified against the real streams — Antenne Bayern and Milano Lounge both
+    return the same title on three consecutive uncached reads."""
+    _mock_icy(monkeypatch, artist="Anyma", title="Eternity")
+    _mock_listeners(monkeypatch, None)
+    t = time.monotonic()
+    for _ in range(6):
+        t += main.CURRENT_TRACK_TTL - 1
+        _freeze(monkeypatch, t)
+        body = await _poll(client)
+
+    assert body["current"]["title"] == "Eternity"

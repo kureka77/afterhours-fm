@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatUptime, formatSessionTime, parseMountPoint } from "../../static/utils.js";
+import { formatUptime, formatSessionTime, parseMountPoint, ordinal } from "../../static/utils.js";
 
 // ── formatUptime ──────────────────────────────────────────────────────────────
 
@@ -62,4 +62,41 @@ describe("parseMountPoint", () => {
 
   it("handles application/ogg", () =>
     expect(parseMountPoint("application/ogg")).toBe("OGG"));
+});
+
+// ── ordinal ───────────────────────────────────────────────────────────────────
+// Powers the "heard this before" badge — "3rd play · first heard 21 Aug on …".
+
+describe("ordinal", () => {
+  it("uses st/nd/rd for 1, 2, 3", () => {
+    expect(ordinal(1)).toBe("1st");
+    expect(ordinal(2)).toBe("2nd");
+    expect(ordinal(3)).toBe("3rd");
+  });
+
+  it("uses th for 4 through 10", () => {
+    expect(ordinal(4)).toBe("4th");
+    expect(ordinal(9)).toBe("9th");
+    expect(ordinal(10)).toBe("10th");
+  });
+
+  it("uses th for the 11-13 exception, not st/nd/rd", () => {
+    // The reason this isn't a plain last-digit lookup: 13 is "13th", not "13rd".
+    expect(ordinal(11)).toBe("11th");
+    expect(ordinal(12)).toBe("12th");
+    expect(ordinal(13)).toBe("13th");
+  });
+
+  it("resumes st/nd/rd past the exception", () => {
+    expect(ordinal(21)).toBe("21st");
+    expect(ordinal(22)).toBe("22nd");
+    expect(ordinal(23)).toBe("23rd");
+    expect(ordinal(24)).toBe("24th");
+  });
+
+  it("handles the 111-113 exception in the next hundred", () => {
+    expect(ordinal(111)).toBe("111th");
+    expect(ordinal(112)).toBe("112th");
+    expect(ordinal(101)).toBe("101st");
+  });
 });

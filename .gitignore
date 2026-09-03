@@ -17,6 +17,11 @@ app.db
 node_modules/
 package-lock.json
 
+# Playwright MCP scratch output — page snapshots and console logs from browser
+# verification. Not ignored before, and they capture whatever was on screen,
+# which for this app includes live track data.
+.playwright-mcp/
+
 # Editor / OS / tooling
 .DS_Store
 .claude/

@@ -66,12 +66,28 @@ async def test_parses_artist_and_title(monkeypatch):
     assert result["title"] == "Café Del Mar"
 
 
-async def test_no_dash_puts_everything_in_title(monkeypatch):
-    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='Just A Title';")
+async def test_title_without_artist_separator_is_rejected(monkeypatch):
+    """A StreamTitle with no " - " is a show or station ident, not a track.
+
+    This used to be kept as artist="" / title=<whole string>, which is how 34
+    junk rows reached the database — 31 of them Blue Marlin's "Djs Blue Marlin
+    Sessions", the single most "played" row in the table. Returning nothing
+    lets the fallbacks in now_playing() look for the actual song instead.
+    """
+    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='Djs Blue Marlin Sessions';")
     _patch_client(monkeypatch, _FakeStreamResponse({"icy-metaint": "64"}, [raw]))
     result = await main._read_icy_now_playing("http://x")
     assert result["artist"] == ""
-    assert result["title"] == "Just A Title"
+    assert result["title"] == ""
+
+
+async def test_title_with_separator_still_parses(monkeypatch):
+    """The other side of that guard — a real track must be unaffected."""
+    raw = _icy_bytes(64, b"audio" * 10, "StreamTitle='Anyma - Eternity';")
+    _patch_client(monkeypatch, _FakeStreamResponse({"icy-metaint": "64"}, [raw]))
+    result = await main._read_icy_now_playing("http://x")
+    assert result["artist"] == "Anyma"
+    assert result["title"] == "Eternity"
 
 
 async def test_no_icy_metaint_header(monkeypatch):

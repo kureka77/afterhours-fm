@@ -8,7 +8,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="preload" as="image" href="/static/hero.webp" type="image/webp" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <!-- ?v= is the first 8 hex of style.css's sha256. nginx caches /static/
+       for a day, so without this a CSS change is invisible until that
+       expires — which is exactly how a fixed logo background kept
+       rendering stale. tests/test_asset_version.py fails if the two drift. -->
+  <link rel="stylesheet" href="/static/style.css?v=d4a8568e" />
   <!-- integrity: subresource integrity hash. The browser refuses to run the file
        if its bytes don't match, so a compromised or hijacked CDN can't silently
        swap in different JavaScript. crossorigin is required for the check to run
@@ -55,6 +59,7 @@
             <p class="hero-track-artist" id="heroArtist"></p>
             <p class="hero-track-title"  id="heroTitle"></p>
             <span class="hero-track-source" id="heroSource" style="display:none">via Shazam</span>
+            <span class="hero-track-heard" id="heroHeard" style="display:none"></span>
           </div>
         </div>
       </div>
@@ -104,6 +109,7 @@
       <div class="stations-wrap">
         <div class="stations-label">Choose a station</div>
         <div class="stations-scroll" id="stationsList"></div>
+        <div class="stations-similar" id="stationsSimilar" style="display:none"></div>
       </div>
     </div>
 
@@ -130,10 +136,10 @@
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
             <span id="spotifySaveLabel">Add to Spotify</span>
           </button>
-          <a class="shazam-btn" href="https://www.shazam.com/" target="_blank" rel="noopener" aria-label="Name this track with Shazam">
+          <button class="shazam-btn" id="shazamBtn" data-state="idle" aria-label="Name this track with Shazam">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
-            Name this track with Shazam
-          </a>
+            <span id="shazamLabel">Name this track with Shazam</span>
+          </button>
         </div>
 
       </div>
@@ -203,6 +209,10 @@
     const heroTitle       = document.getElementById("heroTitle");
     const heroSource      = document.getElementById("heroSource");
     const trackPlaceholder= document.getElementById("trackPlaceholder");
+    const heroHeard       = document.getElementById("heroHeard");
+    const stationsSimilar = document.getElementById("stationsSimilar");
+    const shazamBtn       = document.getElementById("shazamBtn");
+    const shazamLabel     = document.getElementById("shazamLabel");
     const infoTitle       = document.getElementById("infoTitle");
     const infoAlbum       = document.getElementById("infoAlbum");
     const navStationName  = document.getElementById("navStationName");
@@ -276,7 +286,7 @@
       // Update hero heading + nav — real logo where we have one (hotlinked,
       // never stored — see the STATIONS comment above), styled text otherwise.
       heroStation.innerHTML = s.logo
-        ? `<img class="hero-station-logo" src="${s.logo}" alt="${s.name}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {textContent: '${s.name}'}))">`
+        ? `<img class="hero-station-logo${s.logoBackground === "dark" ? " on-dark" : ""}" src="${s.logo}" alt="${s.name}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {textContent: '${s.name}'}))">`
         : `<span>${s.name}</span>`;
 
       // Update nav + stats — show what's known statically first (mainly for
@@ -291,17 +301,17 @@
       navListeners.style.display = "none";
       listenerStat.textContent   = "—";
 
-      // Clear track info; ICY stream-title reading works for any non-HLS station
+      // Clear track info and poll — every station now has *some* track source.
+      // Non-HLS stations read the broadcaster's own ICY title (near-instant);
+      // HLS stations have no metadata at all, so the server captures ~10s of
+      // segments and fingerprints them, which is why they get their own
+      // placeholder — "Reading stream info…" would misdescribe a ~15s wait.
       clearTrackInfo();
       resetSpotifySave();
-      if (!isHls(s)) {
-        trackPlaceholder.style.display = "";
-        trackPlaceholder.textContent   = "Reading stream info…";
-        fetchNowPlaying();
-      } else {
-        trackPlaceholder.style.display = "";
-        trackPlaceholder.textContent   = "Now playing live";
-      }
+      resetShazamBtn();
+      trackPlaceholder.style.display = "";
+      trackPlaceholder.textContent   = isHls(s) ? "Identifying track…" : "Reading stream info…";
+      fetchNowPlaying();
       // "On air since" is a hand-noted fact we only have for Pure Ibiza —
       // can't generalize it to stations we don't know the start time of.
       if (s.name === "Pure Ibiza Radio") {
@@ -309,6 +319,8 @@
       } else {
         uptimeStat.textContent = "—";
       }
+
+      fetchSimilarStations(s.name);
 
       // Start playback
       stopPlay();
@@ -397,9 +409,85 @@
       heroCover.style.display = "none";
       heroCover.src = "";
       heroSource.style.display = "none";
+      heroHeard.style.display  = "none";
       infoTitle.textContent    = "—";
       infoAlbum.textContent    = "";
     }
+
+    // ── Name this track (manual Shazam) ───────────────────────────────────────
+    // This used to be a plain link to shazam.com's *homepage*. The user landed
+    // there, clicked Shazam's mic button, and Shazam listened through the
+    // device microphone — so it identified whatever the room could hear. That
+    // meant it needed speakers rather than headphones, needed mic permission,
+    // was wrong if anyone was talking, and fed nothing back into the app.
+    //
+    // The server already fingerprints stream audio directly
+    // (shazam_fallback.py, the same path the automatic fallback uses), so the
+    // button now triggers that instead: one click, no new tab, no microphone,
+    // and it hears the actual stream rather than the room. Once a track is
+    // identified the button turns into a deep link to *that track* on Shazam —
+    // which is where the original link was trying to get to anyway.
+    function resetShazamBtn() {
+      shazamBtn.dataset.state = "idle";
+      delete shazamBtn.dataset.shazamUrl;
+      shazamLabel.textContent = "Name this track with Shazam";
+    }
+
+    // Paint the result immediately rather than waiting up to 20s for the next
+    // poll. The server primed its Shazam cache, so that poll will render the
+    // same track through the normal path and persist it.
+    function showIdentifiedTrack(m) {
+      trackPlaceholder.style.display = "none";
+      heroTrackInfo.style.display = "flex";
+      heroArtist.textContent = m.artist || "";
+      heroTitle.textContent  = m.title;
+      infoTitle.textContent  = m.title;
+      heroSource.style.display = "";
+      if (m.cover_url) {
+        heroCover.src = m.cover_url;
+        heroCover.style.display = "";
+      }
+      spotifySaveBtn.disabled = false;
+      fetchTrackStats(m.artist, m.title);
+    }
+
+    shazamBtn.addEventListener("click", async () => {
+      if (shazamBtn.dataset.state === "done") {
+        if (shazamBtn.dataset.shazamUrl) window.open(shazamBtn.dataset.shazamUrl, "_blank", "noopener");
+        return;
+      }
+      if (shazamBtn.dataset.state === "listening") return;
+      const s = STATIONS[activeIdx];
+      if (!s) return;
+
+      shazamBtn.dataset.state = "listening";
+      shazamLabel.textContent = "Listening…";
+      try {
+        const params = new URLSearchParams({ station: s.name });
+        const resp = await fetch(`/api/identify?${params}`, { method: "POST" });
+        const data = await resp.json();
+        if (resp.ok && data.match) {
+          shazamBtn.dataset.state = "done";
+          if (data.match.shazam_url) shazamBtn.dataset.shazamUrl = data.match.shazam_url;
+          shazamLabel.textContent = data.match.shazam_url
+            ? `${data.match.artist} — ${data.match.title} ↗`
+            : `${data.match.artist} — ${data.match.title}`;
+          showIdentifiedTrack(data.match);
+        } else {
+          shazamBtn.dataset.state = "error";
+          // A no-match is a normal outcome (speech radio, a DJ talking over the
+          // intro), not a failure — say so plainly rather than "error".
+          shazamLabel.textContent = resp.status === 429
+            ? "Already listening…"
+            : "No match — try again";
+          setTimeout(() => { if (shazamBtn.dataset.state === "error") resetShazamBtn(); }, 4000);
+        }
+      } catch {
+        shazamBtn.dataset.state = "error";
+        shazamLabel.textContent = "Network error";
+        setTimeout(() => { if (shazamBtn.dataset.state === "error") resetShazamBtn(); }, 4000);
+      }
+    });
 
     // ── Add to Spotify ────────────────────────────────────────────────────────
     let lastSpotifyTrackKey = null;   // artist|title the button's current state applies to
@@ -464,13 +552,10 @@
           ? `${h}h ${m}m listening`
           : `${m}:${String(sec).padStart(2,"0")} listening`;
       }, 1000);
-      // HLS stations have no ICY metadata at all — that's a permanent state,
-      // so pin the generic placeholder rather than let fetchNowPlaying's
-      // "Reading stream info…" text sit there forever on every reconnect.
-      if (activeIdx >= 0 && isHls(STATIONS[activeIdx])) {
-        trackPlaceholder.style.display = "";
-        trackPlaceholder.textContent   = "Now playing live";
-      }
+      // Nothing to pin here any more: HLS stations are polled like every other
+      // station now, and fetchNowPlaying() owns the placeholder text. Forcing
+      // it on reconnect would paint "Now playing live" over a track Shazam had
+      // already identified.
     });
     audio.addEventListener("pause",   () => { playing = false; clearInterval(uptimeInterval); });
     audio.addEventListener("ended",   () => { playing = false; setStatus("stopped"); clearInterval(uptimeInterval); });
@@ -530,7 +615,7 @@
     // way it's honest "stream info", not a guess.
     async function fetchNowPlaying() {
       const s = STATIONS[activeIdx];
-      if (!s || isHls(s)) return;
+      if (!s) return;
       try {
         // Station name only — the server resolves the stream URL itself from
         // stations.json. See the STATIONS comment at the top of this script.
@@ -577,16 +662,91 @@
           const key = `${c.artist}|${c.title}`;
           if (key !== lastSpotifyTrackKey) {
             resetSpotifySave();
+            resetShazamBtn();
             lastSpotifyTrackKey = key;
             spotifySaveBtn.disabled = false;
+            // Once per track change, not per poll — the row for this play has
+            // just been persisted, so the count includes it.
+            fetchTrackStats(c.artist, c.title);
           }
         } else {
           trackPlaceholder.style.display = "";
-          trackPlaceholder.textContent   = "Reading stream info…";
+          // A poll has completed and produced no track. That's a real state for
+          // any station, not just HLS: Shazam legitimately finds nothing on
+          // speech radio, between tracks, or over a DJ talkover, and the server
+          // now clears a track that nothing has confirmed for
+          // CURRENT_TRACK_TTL rather than leaving a stale guess on screen.
+          // "Reading stream info…" would be a lie once we've read it and there
+          // was nothing — that wording belongs only to the pre-first-poll
+          // window set in selectStation().
+          trackPlaceholder.textContent = "Now playing live";
         }
       } catch {}
     }
     setInterval(fetchNowPlaying, 20_000);
+
+    // ── "Heard this before" ───────────────────────────────────────────────────
+    // played_tracks holds every track this app has seen play on any station, so
+    // a repeat is worth surfacing. Called on track change only.
+    function ordinal(n) {
+      const teens = n % 100;
+      if (teens >= 11 && teens <= 13) return `${n}th`;
+      return `${n}${["th", "st", "nd", "rd"][n % 10] || "th"}`;
+    }
+
+    async function fetchTrackStats(artist, title) {
+      heroHeard.style.display = "none";
+      if (!artist || !title) return;
+      try {
+        const params = new URLSearchParams({ artist, title });
+        const s = await fetch(`/api/track-stats?${params}`).then(r => r.json());
+        // The play just persisted is included, so plays === 1 means "first
+        // time" — nothing worth saying.
+        if (!s.plays || s.plays < 2) return;
+        const when = s.first_heard
+          ? new Date(s.first_heard).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+          : null;
+        heroHeard.textContent = (when && s.first_station)
+          ? `${ordinal(s.plays)} play · first heard ${when} on ${s.first_station}`
+          : `${ordinal(s.plays)} play`;
+        heroHeard.style.display = "";
+      } catch {}
+    }
+
+    // ── Similar stations ──────────────────────────────────────────────────────
+    // 25 stations in a flat picker gives no clue which are alike. The server
+    // scores overlap by artist (see /api/similar-stations) from listening
+    // history, so these suggestions get better the more the app is used.
+    async function fetchSimilarStations(name) {
+      stationsSimilar.style.display = "none";
+      stationsSimilar.replaceChildren();
+      try {
+        const params = new URLSearchParams({ station: name, limit: "3" });
+        const data = await fetch(`/api/similar-stations?${params}`).then(r => r.json());
+        if (!data.similar || !data.similar.length) return;
+
+        const label = document.createElement("span");
+        label.className = "similar-label";
+        label.textContent = "Similar";
+        stationsSimilar.appendChild(label);
+
+        data.similar.forEach(sim => {
+          const btn = document.createElement("button");
+          btn.className = "similar-btn";
+          // textContent / .title rather than innerHTML: artist names reach this
+          // from broadcaster ICY metadata, which is third-party input we don't
+          // control and must not inject as markup.
+          btn.textContent = sim.station;
+          btn.title = `${sim.shared_artists} shared artists — e.g. ${sim.examples.join(", ")}`;
+          btn.addEventListener("click", () => {
+            const idx = STATIONS.findIndex(x => x.name === sim.station);
+            if (idx >= 0) selectStation(idx);
+          });
+          stationsSimilar.appendChild(btn);
+        });
+        stationsSimilar.style.display = "";
+      } catch {}
+    }
 
     // ── Boot ──────────────────────────────────────────────────────────────────
     loadStations();
