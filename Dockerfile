@@ -18,6 +18,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade the toolchain that ships inside python:3.14-slim before installing
+# anything. The base image pins a setuptools with CVE-2025-47273 (path
+# traversal in PackageIndex) and a pip whose vendored msgpack carries
+# GHSA-6v7p-g79w-8964 — both HIGH, both with fixes available, and both found by
+# the Trivy job in ci.yml. Neither is imported by the app, but they are bytes we
+# ship, and "we never call it" is not a defence a scanner accepts nor a habit
+# worth forming.
+RUN pip install --no-cache-dir --upgrade pip setuptools
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

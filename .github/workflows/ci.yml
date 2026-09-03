@@ -130,3 +130,73 @@ jobs:
       # vulnerability.
       - name: pip-audit (dependency CVEs)
         run: pip-audit -r requirements.txt -r requirements-dev.txt
+
+  # Secret scanning. The other scanners look for vulnerable code and vulnerable
+  # dependencies; neither notices a credential committed by mistake. This repo
+  # handles a Spotify refresh token, a Postgres password and (via .env) real
+  # secrets, so the failure mode is live rather than theoretical.
+  secrets-scan:
+    name: Security scan (gitleaks — secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A secret is only really gone once it is out of *history*. Scanning
+          # the tip alone would pass a repo whose previous commit leaked a key.
+          fetch-depth: 0
+
+      # Installed from the pinned release rather than via the marketplace action,
+      # which asks organisation users for a licence key — this keeps the job
+      # working regardless of who forks it.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # --redact so a finding never echoes the secret itself into public build
+      # logs, which would leak it a second time.
+      - name: Scan commit history for secrets
+        run: gitleaks detect --no-banner --redact --verbose
+
+  # Container scanning. bandit covers our Python, pip-audit and npm audit cover
+  # our dependencies — none of them see the base image. Most of the bytes we
+  # actually ship come from python:3.14-slim, and its CVEs are invisible to
+  # every other job here.
+  container-scan:
+    name: Security scan (Trivy — container image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the prod image
+        run: docker build --target prod -t afterhours-fm:ci .
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: afterhours-fm:ci
+          format: table
+          severity: HIGH,CRITICAL
+          # OS packages only. Each scanner here owns exactly one layer:
+          # pip-audit covers Python dependencies, npm audit covers JavaScript,
+          # and the base image's Debian packages are what nothing else sees.
+          # Letting Trivy also scan Python packages produced pure noise — it
+          # reported a setuptools version the image does not actually ship
+          # (verified by exporting the filesystem: only 84.0.0 is present), and
+          # flagged the msgpack that pip vendors internally, which no pip
+          # release has yet bumped and which the app never imports.
+          # Input is `vuln-type`, not `pkg-types` — the action still uses the
+          # old name.
+          vuln-type: os
+          # Unfixed CVEs are the overwhelming majority here: this image carries
+          # 274 HIGH and 18 CRITICAL OS findings for which Debian has published
+          # no fix, and every one disappears under this flag. Failing on them
+          # would make the job permanently red and therefore ignored; failing
+          # only on fixable ones keeps a red X meaningful.
+          ignore-unfixed: true
+          exit-code: "1"

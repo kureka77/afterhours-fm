@@ -1,0 +1,86 @@
+name: SonarQube
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  sonarqube:
+    name: SonarQube analysis
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
+    steps:
+      # Sonar is the only check here needing credentials, and a pull request
+      # from a fork never receives them. Failing every such PR red would train
+      # people to ignore a red X, so detect the missing token and skip instead —
+      # the rest of CI still gates the merge.
+      #
+      # One-time setup to switch this on:
+      #   1. Create the project on SonarQube Cloud (or your own server).
+      #   2. Add repository secret SONAR_TOKEN.
+      #   3. Uncomment sonar.organization in sonar-project.properties.
+      #   4. Self-hosted only: add repository variable SONAR_HOST_URL.
+      - name: Is SonarQube configured?
+        id: guard
+        run: |
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::notice::SONAR_TOKEN is not set — skipping SonarQube analysis."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.run == 'true'
+        with:
+          # Sonar reads git history to attribute issues to authors and to decide
+          # what counts as "new code". Under the default shallow clone every
+          # line looks new, which makes the new-code quality gate meaningless.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.run == 'true'
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: "requirements*.txt"
+
+      - name: Install Python dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # Modules listed explicitly rather than --cov=. so the report covers the
+      # same files as sonar.sources, without dragging in tests or the venv.
+      - name: pytest with coverage (Cobertura XML)
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          pytest --cov=main --cov=database --cov=models --cov=spotify \
+                 --cov=shazam_fallback --cov=sunshine_playlist --cov=config \
+                 --cov-report=xml
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.run == 'true'
+        with:
+          node-version: 20
+
+      - name: Install Node dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: npm install
+
+      - name: Vitest with coverage (LCOV)
+        if: steps.guard.outputs.run == 'true'
+        run: npx vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text
+
+      # qualitygate.wait makes this an actual gate rather than a fire-and-forget
+      # upload: the step blocks on the server's verdict and fails the job if the
+      # quality gate fails. Without it a red gate would still show a green CI.
+      - name: SonarQube scan
+        if: steps.guard.outputs.run == 'true'
+        uses: SonarSource/sonarqube-scan-action@v7
+        with:
+          args: -Dsonar.qualitygate.wait=true
