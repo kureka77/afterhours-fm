@@ -12,7 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      # Read into a side variable rather than straight into SONAR_HOST_URL. An
+      # unset repository variable expands to "", and the scanner treats a
+      # *present but empty* SONAR_HOST_URL as a server whose address is "" —
+      # it only defaults to SonarQube Cloud when the variable is absent
+      # altogether (sonar-scanner-java-library: EnvironmentConfig.load copies
+      # any non-null env value, and ScannerEndpointResolver branches on
+      # containsKey, not on blankness). The guard step below exports the real
+      # variable only when there is a value.
+      SONAR_HOST_URL_VAR: ${{ vars.SONAR_HOST_URL }}
 
     steps:
       # Sonar is the only check here needing credentials, and a pull request
@@ -21,10 +29,14 @@ jobs:
       # the rest of CI still gates the merge.
       #
       # One-time setup to switch this on:
-      #   1. Create the project on SonarQube Cloud (or your own server).
+      #   1. Create the project on SonarQube Cloud (or your own server). On
+      #      Cloud, turn off Automatic Analysis for it — Cloud refuses a
+      #      CI-based scan while that is on.
       #   2. Add repository secret SONAR_TOKEN.
-      #   3. Uncomment sonar.organization in sonar-project.properties.
-      #   4. Self-hosted only: add repository variable SONAR_HOST_URL.
+      #   3. In sonar-project.properties, uncomment sonar.organization and make
+      #      sonar.projectKey match the key Cloud generated (<org>_<repo>).
+      #   4. Self-hosted only: add repository variable SONAR_HOST_URL. Leave it
+      #      unset for Cloud.
       - name: Is SonarQube configured?
         id: guard
         run: |
@@ -33,6 +45,10 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+          # Self-hosted server only; absent means the scanner targets Cloud.
+          if [ -n "${SONAR_HOST_URL_VAR}" ]; then
+            echo "SONAR_HOST_URL=${SONAR_HOST_URL_VAR}" >> "$GITHUB_ENV"
           fi
 
       - uses: actions/checkout@v4
