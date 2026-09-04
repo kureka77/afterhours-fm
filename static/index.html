@@ -12,7 +12,7 @@
        for a day, so without this a CSS change is invisible until that
        expires — which is exactly how a fixed logo background kept
        rendering stale. tests/test_asset_version.py fails if the two drift. -->
-  <link rel="stylesheet" href="/static/style.css?v=d4a8568e" />
+  <link rel="stylesheet" href="/static/style.css?v=5bee6fc1" />
   <!-- integrity: subresource integrity hash. The browser refuses to run the file
        if its bytes don't match, so a compromised or hijacked CDN can't silently
        swap in different JavaScript. crossorigin is required for the check to run
@@ -54,10 +54,14 @@
       <div class="hero-track">
         <p class="hero-track-placeholder" id="trackPlaceholder">Select a station to start listening</p>
         <div class="hero-track-info" id="heroTrackInfo" style="display:none">
-          <img class="hero-track-cover" id="heroCover" alt="" style="display:none" />
+          <img class="hero-track-cover" id="heroCover" alt="" style="display:none"
+               onerror="this.style.display='none'" />
           <div class="hero-track-text">
             <p class="hero-track-artist" id="heroArtist"></p>
-            <p class="hero-track-title"  id="heroTitle"></p>
+            <!-- An <a>, not a <p>: the title deep-links to the song on Genius.
+                 With no href (nothing playing yet) it renders as plain text. -->
+            <a class="hero-track-title" id="heroTitle"
+               target="_blank" rel="noopener noreferrer"></a>
             <span class="hero-track-source" id="heroSource" style="display:none">via Shazam</span>
             <span class="hero-track-heard" id="heroHeard" style="display:none"></span>
           </div>
@@ -109,7 +113,6 @@
       <div class="stations-wrap">
         <div class="stations-label">Choose a station</div>
         <div class="stations-scroll" id="stationsList"></div>
-        <div class="stations-similar" id="stationsSimilar" style="display:none"></div>
       </div>
     </div>
 
@@ -157,6 +160,14 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- Similar stations — moved out of the hero picker, which has no room for
+         it now the cover art is full size. Down here each suggestion can say
+         *why* it is a suggestion instead of hiding that in a tooltip. -->
+    <div class="info-similar" id="stationsSimilar" style="display:none">
+      <h2>Stations like this</h2>
+      <div class="similar-grid" id="similarGrid"></div>
     </div>
   </section>
 
@@ -211,6 +222,7 @@
     const trackPlaceholder= document.getElementById("trackPlaceholder");
     const heroHeard       = document.getElementById("heroHeard");
     const stationsSimilar = document.getElementById("stationsSimilar");
+    const similarGrid     = document.getElementById("similarGrid");
     const shazamBtn       = document.getElementById("shazamBtn");
     const shazamLabel     = document.getElementById("shazamLabel");
     const infoTitle       = document.getElementById("infoTitle");
@@ -406,12 +418,57 @@
 
     function clearTrackInfo() {
       heroTrackInfo.style.display = "none";
+      // Drops the Genius href too, so last station's song can't come back as a
+      // live link if the block is ever shown before a new title lands.
+      setHeroTitle("", "");
       heroCover.style.display = "none";
       heroCover.src = "";
       heroSource.style.display = "none";
       heroHeard.style.display  = "none";
       infoTitle.textContent    = "—";
       infoAlbum.textContent    = "";
+    }
+
+    // ── Song title -> Genius ──────────────────────────────────────────────────
+    // Genius has no keyless "give me the page for this song" endpoint, so the
+    // link goes to its own search page with the query pre-filled — the song is
+    // the top result for every track checked. Version suffixes are dropped
+    // ("Closer (Extended Mix)" -> "Closer"): Genius indexes *songs*, not
+    // releases, and the remix name is exactly the token that makes the search
+    // miss. Same reasoning as spotify.py's _core_title, one layer up.
+    // Mirrored into static/utils.js for the Vitest suite.
+    // Only the *primary* artist goes into the query. Measured against Genius's
+    // own search with real station credits: the full multi-artist string
+    // ("JOEL CORRY x DAVID GUETTA x BRYSON TILLER") returned no song at all for
+    // 3 of 5 tracks, while the primary alone got 4 of 5 exactly right. "&" and
+    // "and" are deliberately *not* separators — they sit inside band names
+    // constantly (Hercules & Love Affair, Simon & Garfunkel) and Genius
+    // resolves a genuine "&" collab anyway (CamelPhat & ARTBAT -> correct).
+    // Truncating a real name on the ones that remain is harmless: "Earth
+    // September" and "Man Raise Your Flag" both still return the right song,
+    // because the title carries the search.
+    const GENIUS_ARTIST_SEP = /\s+(?:x|vs\.?|feat\.?|ft\.?|featuring|with)\s+|,\s*/i;
+
+    function geniusSearchUrl(artist, title) {
+      const track = String(title || "").replace(/[([][^)\]]*[)\]]/g, " ").split(" - ")[0].trim();
+      if (!track) return "";                      // no song -> nothing to link to
+      const who = String(artist || "").split(GENIUS_ARTIST_SEP)[0].trim();
+      const q = `${who} ${track}`.replace(/\s+/g, " ").trim();
+      // encodeURIComponent, not raw interpolation: titles carry &, ?, # and +
+      // routinely, and each of those means something else in a query string.
+      return `https://genius.com/search?q=${encodeURIComponent(q)}`;
+    }
+
+    // The hero title doubles as that link. An <a> with no href renders as plain
+    // text and isn't focusable, so *removing* the attribute — rather than
+    // pointing it at "" — is what keeps the placeholder state from being a dead
+    // link. heroTitle.textContent still returns the bare title, which the
+    // Spotify save button reads back.
+    function setHeroTitle(artist, title) {
+      heroTitle.textContent = title || "";
+      const url = geniusSearchUrl(artist, title);
+      if (url) heroTitle.href = url;
+      else     heroTitle.removeAttribute("href");
     }
 
     // ── Name this track (manual Shazam) ───────────────────────────────────────
@@ -440,7 +497,7 @@
       trackPlaceholder.style.display = "none";
       heroTrackInfo.style.display = "flex";
       heroArtist.textContent = m.artist || "";
-      heroTitle.textContent  = m.title;
+      setHeroTitle(m.artist, m.title);
       infoTitle.textContent  = m.title;
       heroSource.style.display = "";
       if (m.cover_url) {
@@ -641,7 +698,7 @@
           trackPlaceholder.style.display = "none";
           heroTrackInfo.style.display = "flex";
           heroArtist.textContent  = c.artist || "";
-          heroTitle.textContent   = c.title;
+          setHeroTitle(c.artist, c.title);
           infoTitle.textContent   = c.title;
           infoAlbum.textContent   = c.album || s.name;
 
@@ -719,30 +776,40 @@
     // history, so these suggestions get better the more the app is used.
     async function fetchSimilarStations(name) {
       stationsSimilar.style.display = "none";
-      stationsSimilar.replaceChildren();
+      similarGrid.replaceChildren();
       try {
-        const params = new URLSearchParams({ station: name, limit: "3" });
+        // 4, not 3: the block sits in the info section now rather than in the
+        // hero picker, so there is room for a full row of cards.
+        const params = new URLSearchParams({ station: name, limit: "4" });
         const data = await fetch(`/api/similar-stations?${params}`).then(r => r.json());
         if (!data.similar || !data.similar.length) return;
 
-        const label = document.createElement("span");
-        label.className = "similar-label";
-        label.textContent = "Similar";
-        stationsSimilar.appendChild(label);
-
         data.similar.forEach(sim => {
-          const btn = document.createElement("button");
-          btn.className = "similar-btn";
-          // textContent / .title rather than innerHTML: artist names reach this
-          // from broadcaster ICY metadata, which is third-party input we don't
-          // control and must not inject as markup.
-          btn.textContent = sim.station;
-          btn.title = `${sim.shared_artists} shared artists — e.g. ${sim.examples.join(", ")}`;
-          btn.addEventListener("click", () => {
+          const card = document.createElement("button");
+          card.className = "similar-card";
+
+          // textContent rather than innerHTML throughout: artist names reach
+          // this from broadcaster ICY metadata, which is third-party input we
+          // don't control and must not inject as markup.
+          const nameEl = document.createElement("span");
+          nameEl.className = "similar-name";
+          nameEl.textContent = sim.station;
+
+          const whyEl = document.createElement("span");
+          whyEl.className = "similar-why";
+          const plural = sim.shared_artists === 1 ? "artist" : "artists";
+          whyEl.textContent =
+            `${sim.shared_artists} shared ${plural} · ${sim.examples.join(", ")}`;
+          // The full list still lives in the tooltip — the visible line is
+          // clamped to two rows and long artist names overflow it easily.
+          card.title = whyEl.textContent;
+
+          card.append(nameEl, whyEl);
+          card.addEventListener("click", () => {
             const idx = STATIONS.findIndex(x => x.name === sim.station);
             if (idx >= 0) selectStation(idx);
           });
-          stationsSimilar.appendChild(btn);
+          similarGrid.appendChild(card);
         });
         stationsSimilar.style.display = "";
       } catch {}

@@ -333,8 +333,20 @@ async def _spotify_lookup_cached(artist: str, title: str) -> dict | None:
         match = await spotify.search_track(artist, title)
         result = {"cover_url": match.get("cover_url"),
                   "spotify_url": match.get("spotify_url")} if match else None
-    except Exception:
+    except spotify.SpotifyNotConfigured:
+        # A settled answer for the life of the process: credentials are read
+        # from the environment at call time and won't appear mid-run. Cache it
+        # so an unconfigured install doesn't retry on every new track.
         result = None
+    except Exception:
+        # Rate limit (429), timeout, upstream 5xx — the lookup never completed,
+        # so there is no answer to remember. Returning without caching is the
+        # whole point: this cache has no TTL, so storing a transient failure
+        # blanked that track's cover *permanently*. Flipping quickly through
+        # stations bursts enough searches to trip Spotify's rate limit, which
+        # is exactly when a run of tracks would otherwise lose their art for
+        # good. The next poll simply tries again.
+        return None
     _spotify_cache[key] = result
     return result
 

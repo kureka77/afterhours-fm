@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatUptime, formatSessionTime, parseMountPoint, ordinal } from "../../static/utils.js";
+import { formatUptime, formatSessionTime, parseMountPoint, ordinal, geniusSearchUrl } from "../../static/utils.js";
 
 // ── formatUptime ──────────────────────────────────────────────────────────────
 
@@ -99,4 +99,60 @@ describe("ordinal", () => {
     expect(ordinal(112)).toBe("112th");
     expect(ordinal(101)).toBe("101st");
   });
+});
+
+// ── geniusSearchUrl ───────────────────────────────────────────────────────────
+
+describe("geniusSearchUrl", () => {
+  it("builds a search URL from artist and title", () =>
+    expect(geniusSearchUrl("Adriatique", "Closer")).toBe(
+      "https://genius.com/search?q=Adriatique%20Closer"));
+
+  it("drops a parenthesised version suffix", () =>
+    // Genius indexes songs, not releases — "(Extended Mix)" is the token that
+    // makes the search miss.
+    expect(geniusSearchUrl("Traumer", "Night Haze (Edit)")).toBe(
+      "https://genius.com/search?q=Traumer%20Night%20Haze"));
+
+  it("drops a bracketed suffix and a dashed one alike", () => {
+    expect(geniusSearchUrl("Cassius", "1999 [Club Mix]")).toBe(
+      "https://genius.com/search?q=Cassius%201999");
+    expect(geniusSearchUrl("Nikonn", "Sunday - Original Mix")).toBe(
+      "https://genius.com/search?q=Nikonn%20Sunday");
+  });
+
+  it("keeps only the primary artist of a multi-artist credit", () => {
+    // Measured against Genius's own search: the full credit returned no song at
+    // all for 3 of 5 real station tracks; the primary alone got 4 of 5 right.
+    expect(geniusSearchUrl("JOEL CORRY x DAVID GUETTA x BRYSON TILLER", "What Would You Do"))
+      .toBe("https://genius.com/search?q=JOEL%20CORRY%20What%20Would%20You%20Do");
+    expect(geniusSearchUrl("JOEZI FEAT. COCO & PAPE DIOUF", "7 Seconds"))
+      .toBe("https://genius.com/search?q=JOEZI%207%20Seconds");
+    expect(geniusSearchUrl("Ti\u00ebsto, Karol G", "The Business"))
+      .toBe("https://genius.com/search?q=Ti%C3%ABsto%20The%20Business");
+  });
+
+  it("does not split a band name on & or and", () =>
+    // "&" sits inside band names constantly and Genius resolves a genuine
+    // "&" collab anyway, so treating it as a separator only loses information.
+    expect(geniusSearchUrl("Hercules & Love Affair", "Blind")).toBe(
+      "https://genius.com/search?q=Hercules%20%26%20Love%20Affair%20Blind"));
+
+  it("percent-encodes characters that mean something in a query string", () =>
+    // & and ? arrive in real ICY titles and would otherwise start a new
+    // parameter rather than stay part of the search.
+    expect(geniusSearchUrl("Sam & Dave", "Hold On? I'm Comin'")).toBe(
+      "https://genius.com/search?q=Sam%20%26%20Dave%20Hold%20On%3F%20I'm%20Comin'"));
+
+  it("returns empty when there is no title to link to", () => {
+    // The hero shows "Now playing live" in this state; an artist alone is not
+    // a song, so the anchor must end up with no href at all.
+    expect(geniusSearchUrl("Some Station", "")).toBe("");
+    expect(geniusSearchUrl("", "")).toBe("");
+    expect(geniusSearchUrl("Artist", "(Live Set)")).toBe("");
+  });
+
+  it("works with no artist", () =>
+    expect(geniusSearchUrl("", "Closer")).toBe(
+      "https://genius.com/search?q=Closer"));
 });

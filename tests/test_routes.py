@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select
+import httpx
 import pytest
 import main
 import spotify
@@ -809,6 +810,91 @@ async def test_no_spotify_match_leaves_url_null(client, monkeypatch, db_session)
 
     row = (await db_session.execute(select(PlayedTrack))).scalars().one()
     assert row.spotify_url is None
+
+
+# ── Cover-art lookup caching ───────────────────────────────────────────────────
+# Captured at import, before the autouse fixture stubs it out: these tests are
+# about the real caching wrapper, not about a route that happens to call it.
+_REAL_SPOTIFY_LOOKUP = main._spotify_lookup_cached
+
+
+@pytest.fixture
+def spotify_lookup(monkeypatch):
+    monkeypatch.setattr(main, "_spotify_lookup_cached", _REAL_SPOTIFY_LOOKUP)
+    return _REAL_SPOTIFY_LOOKUP
+
+
+async def test_spotify_lookup_caches_a_real_answer(spotify_lookup, monkeypatch):
+    """A hit is settled — neither a cover nor a Spotify URL changes — so the
+    second call must not re-query."""
+    calls = []
+
+    async def fake_search(artist, title):
+        calls.append((artist, title))
+        return {"cover_url": "https://img/c.jpg", "spotify_url": "https://sp/1"}
+
+    monkeypatch.setattr(spotify, "search_track", fake_search)
+
+    first  = await spotify_lookup("Anyma", "Eternity")
+    second = await spotify_lookup("Anyma", "Eternity")
+
+    assert first == second == {"cover_url": "https://img/c.jpg", "spotify_url": "https://sp/1"}
+    assert len(calls) == 1
+
+
+async def test_spotify_lookup_caches_a_genuine_no_match(spotify_lookup, monkeypatch):
+    """A verified no-match is also settled: Spotify simply doesn't carry the
+    track. Retrying it every poll would spend a search to learn nothing."""
+    calls = []
+
+    async def fake_search(artist, title):
+        calls.append((artist, title))
+        return None
+
+    monkeypatch.setattr(spotify, "search_track", fake_search)
+
+    assert await spotify_lookup("Unknown Artist", "Materie Prima") is None
+    assert await spotify_lookup("Unknown Artist", "Materie Prima") is None
+    assert len(calls) == 1
+
+
+async def test_spotify_lookup_does_not_cache_a_transient_failure(spotify_lookup, monkeypatch):
+    """This cache has no TTL, so caching a 429 blanked that track's cover for
+    the life of the process. Flipping quickly through stations bursts enough
+    searches to trip Spotify's rate limit, which is exactly when a run of
+    tracks would otherwise lose their art permanently."""
+    calls = []
+
+    async def flaky_search(artist, title):
+        calls.append((artist, title))
+        if len(calls) == 1:
+            raise httpx.HTTPStatusError(
+                "429", request=httpx.Request("GET", "https://api.spotify.com"),
+                response=httpx.Response(429))
+        return {"cover_url": "https://img/c.jpg", "spotify_url": "https://sp/1"}
+
+    monkeypatch.setattr(spotify, "search_track", flaky_search)
+
+    assert await spotify_lookup("Anyma", "Eternity") is None
+    assert await spotify_lookup("Anyma", "Eternity") == {
+        "cover_url": "https://img/c.jpg", "spotify_url": "https://sp/1"}
+    assert len(calls) == 2
+
+
+async def test_spotify_lookup_caches_missing_credentials(spotify_lookup, monkeypatch):
+    """Unlike a rate limit, this won't resolve mid-run — credentials come from
+    the environment, so an unconfigured install shouldn't retry per track."""
+    calls = []
+
+    async def unconfigured(artist, title):
+        calls.append((artist, title))
+        raise spotify.SpotifyNotConfigured("no credentials")
+
+    monkeypatch.setattr(spotify, "search_track", unconfigured)
+
+    assert await spotify_lookup("Anyma", "Eternity") is None
+    assert await spotify_lookup("Anyma", "Eternity") is None
+    assert len(calls) == 1
 
 
 # ── POST /api/identify (the "Name this track" button) ──────────────────────────

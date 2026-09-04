@@ -53,3 +53,25 @@ export function ordinal(n) {
   if (teens >= 11 && teens <= 13) return `${n}th`;
   return `${n}${["th", "st", "nd", "rd"][n % 10] || "th"}`;
 }
+
+/**
+ * Builds the Genius search URL for a track — the hero title links to it.
+ * Genius has no keyless "page for this song" endpoint, so this is its search
+ * page with the query pre-filled. Version suffixes are dropped ("Closer
+ * (Extended Mix)" -> "Closer") because Genius indexes songs, not releases, and
+ * the remix name is exactly the token that makes the search miss. Only the
+ * primary artist is used: a full "A x B x C" credit returns no song at all.
+ * @param {string} artist
+ * @param {string} title
+ * @returns {string} — the URL, or "" when there is no song to link to
+ */
+const GENIUS_ARTIST_SEP = /\s+(?:x|vs\.?|feat\.?|ft\.?|featuring|with)\s+|,\s*/i;
+
+export function geniusSearchUrl(artist, title) {
+  const track = String(title || "").replace(/[([][^)\]]*[)\]]/g, " ").split(" - ")[0].trim();
+  if (!track) return "";
+  // Primary artist only — a full "A x B x C" credit makes Genius's search miss.
+  const who = String(artist || "").split(GENIUS_ARTIST_SEP)[0].trim();
+  const q = `${who} ${track}`.replace(/\s+/g, " ").trim();
+  return `https://genius.com/search?q=${encodeURIComponent(q)}`;
+}
