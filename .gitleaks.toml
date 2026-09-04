@@ -1,0 +1,31 @@
+# gitleaks configuration — read automatically from the repo root by the
+# "Security scan (gitleaks — secrets)" job in .github/workflows/ci.yml.
+#
+# Only exists to silence one false positive. Everything else stays on.
+
+title = "afterhours-fm"
+
+# Keep every default rule. Without this the file would REPLACE the built-in
+# ruleset and the scan would find nothing at all — a silent pass, which is far
+# worse than the false positive it was written to fix.
+[extend]
+useDefault = true
+
+# `sonar.projectKey=kureka77_afterhours-fm` trips the generic-api-key rule on
+# entropy alone (3.70). It is a public identifier, not a credential: SonarQube
+# Cloud generates it from the organisation and repo names, it appears in the
+# public dashboard URL, and the project itself is public. The real credential
+# for that integration is SONAR_TOKEN, which lives in GitHub secrets and is
+# never written to a file here.
+#
+# Scoped as tightly as the format allows — one rule, one file, one line — so a
+# genuine secret committed to the same file is still caught. Verified by
+# planting a fake high-entropy token in sonar-project.properties and confirming
+# the scan still failed.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "SonarQube Cloud project key is a public identifier, not a secret"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''sonar\.projectKey\s*=\s*kureka77_afterhours-fm''']
+paths = ['''sonar-project\.properties''']
