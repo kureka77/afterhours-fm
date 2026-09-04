@@ -160,6 +160,11 @@ jobs:
 
       # --redact so a finding never echoes the secret itself into public build
       # logs, which would leak it a second time.
+      #
+      # Rules come from .gitleaks.toml in the repo root, which gitleaks picks up
+      # on its own (no --config needed). It extends the built-in ruleset rather
+      # than replacing it, and allowlists exactly one line: the SonarQube Cloud
+      # project key, a public identifier that trips generic-api-key on entropy.
       - name: Scan commit history for secrets
         run: gitleaks detect --no-banner --redact --verbose
 
