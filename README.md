@@ -184,18 +184,31 @@ Every push and pull request runs, alongside the tests:
 | Python SAST | Bandit | hardcoded credentials, injection, weak crypto |
 | Python deps | pip-audit | published CVEs in `requirements*.txt` |
 | JS deps | npm audit | published CVEs |
+| Secrets | gitleaks | credentials anywhere in commit *history*, not just at the tip |
+| Base image | Trivy | Debian CVEs in `python:3.14-slim`, which no other scanner here sees |
+| Quality gate | SonarQube Cloud | bugs, smells, duplication and coverage, blocking on new code |
 | Updates | Dependabot | weekly pip/npm, monthly actions + docker |
 
-`sonar-project.properties` is included for anyone who wants to run SonarQube as well:
+Every one of them runs on each pull request. The Trivy and SonarQube jobs are the
+only two that can be red for reasons outside the diff, so both are scoped: Trivy
+to fixable OS-package CVEs, SonarQube to *new* code.
 
-```bash
-docker run -d --name sonarqube -p 9100:9000 sonarqube:community
-docker run --rm --network host -v "$PWD:/usr/src" \
-  -e SONAR_HOST_URL=http://localhost:9100 -e SONAR_TOKEN=<token> \
-  sonarsource/sonar-scanner-cli
-```
+### SonarQube
 
-Last local SonarQube run: **0 bugs, 0 vulnerabilities, 0 security hotspots**, quality gate OK.
+Analysis runs against [SonarQube Cloud](https://sonarcloud.io/dashboard?id=kureka77_afterhours-fm)
+from `.github/workflows/sonar.yml`, and blocks on the quality gate rather than
+uploading and passing regardless.
+
+The job skips itself when `SONAR_TOKEN` is absent, so a fork never goes red for
+want of a credential it cannot have. To point it at your own organisation, set
+`sonar.organization` and `sonar.projectKey` in `sonar-project.properties` (Cloud
+generates the key as `<org>_<repo>`), add `SONAR_TOKEN` as a repository secret,
+and turn **Automatic Analysis off** for the project — Cloud refuses a CI scan
+while its own scanning is enabled. Leave `SONAR_HOST_URL` unset for Cloud; set it
+as a repository variable only for a self-hosted server.
+
+Current state on `main`: **0 bugs, 0 vulnerabilities, 0 security hotspots**,
+87.5% coverage, quality gate OK.
 
 ## Adding a station
 
